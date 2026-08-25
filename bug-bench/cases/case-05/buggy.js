@@ -13,8 +13,8 @@
 const MSG_TYPES = ['text', 'media', 'game-cmd', 'task'];
 
 function buggySend(type) {
-  // BUG: 缺失类型白名单校验，任何 type 都被接受
-  return { accepted: true, type };
+  // 修复：校验消息类型是否在白名单内，非法类型必须被拒绝
+  return { accepted: MSG_TYPES.includes(type), type };
 }
 
 module.exports = buggySend;

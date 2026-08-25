@@ -17,8 +17,7 @@ function buggyTransport(msgs, nodeB) {
   };
   nodeB.listen(listener);
   for (const m of msgs) {
-    // BUG: 空负载消息被静默丢弃，不投递
-    if (m.payload === '') continue;
+    // 修复：无论消息内容是否为空，只要未关闭都应投递到对端（保证必达）
     nodeB._deliver(m);
   }
   return received;

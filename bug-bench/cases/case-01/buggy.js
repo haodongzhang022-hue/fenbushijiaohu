@@ -24,7 +24,8 @@ class BuggySession {
     return msg;
   }
   merge(msg) {
-    // BUG: 缺失 this._clock = Math.max(this._clock, msg.ts) + 1
+    // 修复：收到远端消息后推进本地 Lamport 时钟（保持因果序）
+    this._clock = Math.max(this._clock, msg.ts) + 1;
     return msg;
   }
   get clock() {

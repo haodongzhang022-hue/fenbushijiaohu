@@ -17,11 +17,11 @@ function buggyPolicy(cfg) {
   const mode = cfg.mode;
   const natFailed = cfg.natFailed;
   return {
-    // BUG: 条件写反 —— offline 时本应 false，却返回 true
-    canBroadcast: mode !== 'offline' ? false : true,
+    // 修复：offline 时禁止广播，online 时可广播
+    canBroadcast: mode === 'offline' ? false : true,
     canReceive: true,
-    // BUG: offline 本应 false，这里返回 true
-    shouldUseRelay: mode === 'offline' ? true : natFailed,
+    // 修复：offline 禁止中继，online 且 NAT 失败时才走中继
+    shouldUseRelay: mode === 'offline' ? false : natFailed,
   };
 }
 

@@ -24,8 +24,8 @@ function buggyVerify(pubKeyB64, msg, sig) {
     });
     return crypto.verify(null, Buffer.from(msg, 'utf8'), keyObj, Buffer.from(sig, 'base64'));
   } catch (e) {
-    // BUG: 异常时应返回 false（拒绝），这里错误地返回 true（放行）
-    return true;
+    // 修复：任何验签失败（公钥非法/签名不匹配/消息篡改）都必须返回 false，绝不放行
+    return false;
   }
 }
 
