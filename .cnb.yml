@@ -1,0 +1,130 @@
+# ============================================================
+# fenbushijiaohu 事件驱动自动化流水线
+# 设计原则：按正常管线「经理划分工作 → 团队开发 → 评审修复闭环」推进，
+#   专门解决 bug 的角色（带「评审-修复闭环护栏」壳）在评审打回时自动介入。
+#   触发链：
+#     1. 新建 Issue（issue.open）→ 分布式交互经理 自动拆解派单
+#     2. 提交 PR（pull_request）→ 测试信号灯 + 代码审查 + 带壳 bug 角色闭环修复
+#     3. PR 可合并（pull_request.mergeable）→ 评审门禁 + 自动合并
+#   信号灯：任何 PR 必须通过 packages/core 测试与 bug-bench 评测，否则红灯阻塞。
+# ============================================================
+
+# ---- 事件驱动：Issue 新建 → 经理自动拆解派单（仅 $ 兜底分支）----
+$:
+  issue.open:
+    - name: manager-orchestrate
+      docker:
+        image: &npc_image cnbcool/default-npc:latest
+      stages:
+        - name: 分布式交互经理拆解派单
+          type: npc:go
+          options:
+            role: 分布式交互经理
+            systemPrompt: |
+              你是 fenbushijiaohu（分布式交互）项目的"经理"。
+              职责：把架构蓝图拆解为部门可执行工作包，按部门分配任务与资源，
+              通过事件驱动机制自动推进协作。
+            userPrompt: |
+              收到新 Issue，请作为经理执行机制化编排：
+              1. 分析 Issue 描述的架构/需求目标；
+              2. 按 docs/architecture 的六层模块拆解为可执行工作包；
+              3. 为每个工作包分配责任模块（通信/会话/身份/策略/测试）与优先级；
+              4. 在 Issue 评论输出工作包拆分表与依赖关系。
+
+# ---- 事件驱动：PR 提交 → 测试信号灯 + 评审 + 带壳 bug 角色闭环修复 ----
+  pull_request:
+    - name: review-fix-loop
+      docker:
+        image: *npc_image
+      stages:
+        - name: 测试信号灯（M1 核心 + bug-bench）
+          script: |
+            cd packages/core && npm test 2>&1
+            cd /workspace && node bug-bench/run.js 2>&1
+            echo "信号灯检查完成"
+        - name: 自动分配评审人
+          type: git:reviewer
+          options:
+            type: add-reviewer
+            count: 1
+        - name: 代码审查
+          type: npc:go
+          options:
+            role: 代码审查员
+            systemPrompt: |
+              你是 fenbushijiaohu 的资深代码审查员，审查代码质量、架构合理性、
+              潜在 Bug 与安全漏洞。审查基准：docs/architecture/04 接口契约。
+            userPrompt: |
+              请审查本次 PR 变更：
+              1. 是否符合 04 接口契约与六层架构约束；
+              2. 是否存在 Bug、安全漏洞、资源泄漏；
+              3. packages/core 测试与 bug-bench 是否通过（信号灯）；
+              4. 给出"通过 / 需修改"结论及具体修改点。
+        - name: 带壳 bug 角色闭环修复
+          type: npc:go
+          options:
+            role: CodeBuddy
+            systemPrompt: |
+              你是专门解决 bug 的角色（带「评审-修复闭环护栏」壳）。
+              收到评审"需修改"后默认直接修改并重新提交：
+              - 默认直接改：bug 优先修复，不反复询问；
+              - 最大 10 轮护栏：达上限仍未解决则反馈人类；
+              - 每修一个点固化测试断言（packages/core/test 或 bug-bench），防止回退；
+              - 钩子没 bug 就停：评审 approved 则直接结束，不改动任何内容。
+            userPrompt: |
+              本次 PR 已完成一轮评审。请作为带壳 bug 角色闭环处理：
+              1. 读取最新评审结论；
+              2. 若"通过/approved"（无 bug）：直接输出"评审通过，等待合并门禁"，
+                 不修改任何代码，结束本阶段；
+              3. 若"需修改"：检查评审→修复轮次是否达 10 轮上限——
+                 - 未达上限：直接修复（bug 优先），在 PR 源分支修改并补充测试断言后
+                   重新 push（触发新一轮 pull_request）；
+                 - 已达上限：停止修复，在 PR 评论反馈人类；
+              4. 修复后确保 packages/core 测试与 bug-bench 通过。
+
+# ---- 事件驱动：PR 可合并 → 评审门禁 + 自动合并 ----
+  pull_request.mergeable:
+    - name: auto-merge
+      docker:
+        image: *npc_image
+      stages:
+        - name: 评审门禁检查
+          type: npc:go
+          options:
+            role: 代码审查员
+            systemPrompt: |
+              你是合并门禁把关人。pull_request.mergeable 只代表可合并，
+              不代表评审已通过。你的职责是校验评审门禁。
+            userPrompt: |
+              本次 PR 达到可合并条件，请校验评审门禁：
+              1. 评审状态是否为 approved；
+              2. 是否存在未解决的 changes_requested / 打回评论；
+              3. 只有评审通过且无阻塞项才输出"放行"并结束；
+              4. 否则中断流水线（返回失败），禁止自动合并。
+        - name: 自动合并
+          type: git:auto-merge
+          options:
+            mergeType: squash
+            removeSourceBranch: true
+
+# ---- 事件驱动：人工评审打回 → 带壳 bug 角色自动修复 ----
+  pull_request.changes_requested:
+    - name: auto-fix-review
+      docker:
+        image: *npc_image
+      stages:
+        - name: 带壳 bug 角色自动修复
+          type: npc:go
+          options:
+            role: CodeBuddy
+            systemPrompt: |
+              你是专门解决 bug 的角色（带壳）。收到评审打回后默认直接修改代码
+              并重新提交，遵循"评审-修复闭环护栏"（默认直接改 / 10 轮护栏 /
+              钩子没 bug 就停 / 固化测试断言）。
+            userPrompt: |
+              本次 PR 被评审打回（changes_requested）。请作为带壳 bug 角色：
+              1. 读取打回原因与行级评论；
+              2. 直接修复指出的问题（bug 优先），在 PR 源分支修改并补充测试断言后
+                 重新 push；
+              3. 若达 10 轮上限仍未解决，停止并反馈人类；
+              4. 修复后确保 packages/core 测试与 bug-bench 通过。
