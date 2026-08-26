@@ -2,10 +2,16 @@
 # fenbushijiaohu 事件驱动自动化流水线
 # 设计原则：按正常管线「经理划分工作 → 团队开发 → 评审修复闭环」推进，
 #   专门解决 bug 的角色（带「评审-修复闭环护栏」壳）在评审打回时自动介入。
+#   触发式优先（webhook/事件驱动，静息零占用）：本流水线全部由「事件钩子」触发，
+#   无任何 crontab 定时轮询 —— 有事件才被唤醒，静息状态几乎不占用资源（类似
+#   硬件高电平触发：平时低功耗待命，收到 webhook/事件才动作）。禁止用轮询/监听
+#   常驻 agent 方式驱动协作，以免静息空转浪费资源。
 #   触发链：
 #     1. 新建 Issue（issue.open）→ 分布式交互经理 自动拆解派单
-#     2. 提交 PR（pull_request）→ 测试信号灯 + 代码审查 + 带壳 bug 角色闭环修复
-#     3. PR 可合并（pull_request.mergeable）→ 评审门禁 + 自动合并
+#     2. Issue/PR 评论 @NPC（issue.comment@npc / pull_request.comment@npc）→ 对应岗位
+#        角色 agent 接力响应（各岗位认领、评审交流、进度同步均为评论触发，非轮询）
+#     3. 提交 PR（pull_request）→ 测试信号灯 + 代码审查 + 带壳 bug 角色闭环修复
+#     4. PR 可合并（pull_request.mergeable）→ 评审门禁 + 自动合并
 #   信号灯：任何 PR 必须通过 packages/core 测试与 bug-bench 评测，否则红灯阻塞。
 #   触发式优先：底层为纯事件驱动（webhook/高电平触发），有事件才被唤醒，静息零占用；
 #     **禁止用轮询 / 常驻监听 agent** 驱动协作。
@@ -13,8 +19,25 @@
 #     @CodeBuddy 触发升级处理（一般权限足够），不得卡死/中断（见 docs/architecture/05 §4）。
 # ============================================================
 
+# ---- 事件驱动：评论 @NPC → 对应角色 agent 触发式接力（静息零占用）----
+# 触发式优先：不靠任何 agent 常驻监听/轮询，而是有人在 Issue/PR 评论中 @对应角色
+# 时（高电平信号）才触发该 NPC 响应；无事件时流水线完全静默、不消耗资源。
 # ---- 事件驱动：Issue 新建 → 经理自动拆解派单（仅 $ 兜底分支）----
 $:
+  issue.comment@npc:
+    - name: npc-event-reply
+      docker:
+        image: cnbcool/default-npc:latest
+      stages:
+        - name: 被 @ 的 NPC 触发式响应
+          type: npc:go
+  pull_request.comment@npc:
+    - name: pr-npc-event-reply
+      docker:
+        image: cnbcool/default-npc:latest
+      stages:
+        - name: PR 评论 @NPC 触发式响应
+          type: npc:go
   issue.open:
     - name: manager-orchestrate
       docker:
@@ -41,9 +64,13 @@ $:
       docker:
         image: *npc_image
       stages:
-        - name: 测试信号灯（M1 核心 + bug-bench）
+        - name: 测试信号灯（M1 核心 + M2/M2a/M3/M4 + bug-bench）
           script: |
             cd packages/core && npm test 2>&1
+            cd /workspace/packages/net-policy && npm test 2>&1
+            cd /workspace/packages/relay-mesh && npm test 2>&1
+            cd /workspace/packages/compute && npm test 2>&1
+            cd /workspace/packages/content && npm test 2>&1
             cd /workspace && node bug-bench/run.js 2>&1
             node bug-bench/compare.js 2>&1
             echo "信号灯检查完成"

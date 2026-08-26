@@ -1,0 +1,13 @@
+{
+  "name": "@fenbushijiaohu/relay-mesh",
+  "version": "0.1.0",
+  "description": "分布式交互中继网格+容错（M2a）：志愿者中继/多路径/健康检测/故障切换",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/relay-mesh.test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}

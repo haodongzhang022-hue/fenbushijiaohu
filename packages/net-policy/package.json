@@ -1,0 +1,13 @@
+{
+  "name": "@fenbushijiaohu/net-policy",
+  "version": "0.1.0",
+  "description": "分布式交互联网策略层（M2）：在线/局域网/离线切换 + NAT 中继兜底",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/net-policy.test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
