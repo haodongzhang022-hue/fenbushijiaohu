@@ -41,6 +41,7 @@ $:
           script: |
             cd packages/core && npm test 2>&1
             cd /workspace && node bug-bench/run.js 2>&1
+            node bug-bench/compare.js 2>&1
             echo "信号灯检查完成"
         - name: 自动分配评审人
           type: git:reviewer

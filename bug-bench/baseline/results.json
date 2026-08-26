@@ -1,0 +1,24 @@
+[
+  {
+    "role": "带壳bug角色(CodeBuddy+壳)",
+    "fixedCount": 22,
+    "totalCount": 22,
+    "avgRounds": 1,
+    "regression": 0,
+    "shellAdherence": {
+      "defaultDirectFix": true,
+      "max10Rounds": true,
+      "stopWhenGreen": true
+    },
+    "note": "含新增高区分度用例(case-06/07/08)：严谨修复覆盖全部边界断言，22/22全绿"
+  },
+  {
+    "role": "无壳基线(侥幸直改)",
+    "fixedCount": 17,
+    "totalCount": 22,
+    "avgRounds": 2.3,
+    "regression": 3,
+    "shellAdherence": null,
+    "note": "只修表面主断言，漏边界：case-06漏冲突合并/case-07漏banned/case-08累加回归"
+  }
+]
