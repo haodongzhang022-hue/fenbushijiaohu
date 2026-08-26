@@ -14,6 +14,11 @@
  *     split(task, parts): string[];       // 任务切分为子任务
  *     collect(result): void;              // 收集单节点结果
  *   }
+ *
+ * WP-6 加固（安全审计 1.3）：
+ *   - 任务 id 熵：改用完整 SHA-256（256-bit）+ 随机盐，消除 64-bit 截断低熵可预测性。
+ *   - submitter 绑定：登记任务时记录提交者身份，供校验溯源 / 防覆盖他人任务。
+ *   - 冲突检测：id 已存在时加盐重试，避免碰撞覆盖。
  */
 const crypto = require('crypto');
 
@@ -26,14 +31,27 @@ class Compute {
   /**
    * 提交一个计算任务
    * @param {{type:string, input:string, replicas?:number}} spec
+   * @param {string} [submitterId] 提交者身份（绑定溯源）
    */
-  submit(spec) {
-    const id = crypto.createHash('sha256').update(spec.input).digest('hex').slice(0, 16);
+  submit(spec, submitterId = 'anonymous') {
+    let id;
+    // 冲突检测：生成唯一 id（完整 SHA-256 + 随机盐），碰撞则加盐重试
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const salt = `${Date.now()}:${crypto.randomBytes(8).toString('hex')}:${attempt}`;
+      id = crypto.createHash('sha256')
+        .update(`${spec.type}:${spec.input}:${salt}`)
+        .digest('hex');
+      if (!this._tasks.has(id)) break;
+    }
+    if (this._tasks.has(id)) {
+      throw new Error('无法生成唯一任务 id，请重试');
+    }
     const task = {
       id,
       type: spec.type,
       input: spec.input,
       replicas: spec.replicas || 1,
+      submitter: submitterId, // 1.3 提交者绑定
     };
     this._tasks.set(id, task);
     this._results.set(id, []);
@@ -60,10 +78,11 @@ class Compute {
    * 收集一个节点返回的结果
    * @param {string} taskId
    * @param {*} value
+   * @param {string} [nodeId] 结果来源节点（供校验溯源）
    */
-  collect(taskId, value) {
+  collect(taskId, value, nodeId) {
     if (!this._results.has(taskId)) throw new Error('任务不存在');
-    this._results.get(taskId).push(value);
+    this._results.get(taskId).push({ value, nodeId: nodeId || null });
     return this._results.get(taskId).length;
   }
 

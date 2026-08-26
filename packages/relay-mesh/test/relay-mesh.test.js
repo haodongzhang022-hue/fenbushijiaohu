@@ -79,6 +79,33 @@ test('mesh: 容量耗尽后不再分配', () => {
   assert.equal(mesh.findRelay('b'), null); // 容量已占用
 });
 
+test('mesh 4.1: 占用→释放→容量恢复', () => {
+  const mesh = new RelayMesh();
+  mesh.offer('relay-1', 1);
+  const relay = mesh.findRelay('a');
+  assert.ok(relay);
+  assert.ok(relay.leaseId); // 返回租约 id
+  assert.equal(mesh.findRelay('b'), null); // 已占用
+  assert.equal(mesh.release(relay.leaseId), true); // 显式释放
+  assert.ok(mesh.findRelay('b')); // 容量恢复后可再次分配
+});
+
+test('mesh 4.1: release 非法租约返回 false', () => {
+  const mesh = new RelayMesh();
+  assert.equal(mesh.release('nope'), false);
+});
+
+test('mesh 4.1: TTL 租约到期后自动回收容量', async () => {
+  const mesh = new RelayMesh({ ttlMs: 10 });
+  mesh.offer('relay-1', 1);
+  const relay = mesh.findRelay('a');
+  assert.ok(relay);
+  assert.equal(mesh.findRelay('b'), null);
+  // 等待 TTL 过期后，下一次 findRelay 自动回收
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(mesh.findRelay('b').id, 'relay-1'); // 容量已自动恢复
+});
+
 // ---------- 4. multipath（多路径） ----------
 test('multipath: 乱序分片可重组完整内容', () => {
   const mp = new Multipath();

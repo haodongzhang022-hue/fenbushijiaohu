@@ -11,6 +11,10 @@
  *     delete(key): void;
  *     hitRate(): number;           // 缓存命中率
  *   }
+ *
+ * WP-6 语义澄清（安全审计 3.3）：
+ *   命中率仅统计 get 操作（hits/(hits+misses)），put/delete 不参与计数；
+ *   get 命中会触发 LRU 访问刷新（移到最近使用），未命中仅计 miss 不淘汰。
  */
 class Storage {
   /**
@@ -52,7 +56,10 @@ class Storage {
     this._store.delete(key);
   }
 
-  /** 缓存命中率 */
+  /**
+   * 缓存命中率：仅统计 get 请求（hits/(hits+misses)），put/delete 不参与计数。
+   * 无任何 get 请求时返回 0。
+   */
   hitRate() {
     const total = this._hits + this._misses;
     return total === 0 ? 0 : this._hits / total;

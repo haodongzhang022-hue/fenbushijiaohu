@@ -40,6 +40,40 @@ test('content: 按指纹取回分片', () => {
   assert.equal(c.lookup('nope'), null);
 });
 
+test('content 3.1: 指纹升级为完整 SHA-256（≥128-bit，≥32 hex）', () => {
+  const c = new Content();
+  const [chunk] = c.chunk('abcd', 4);
+  assert.equal(chunk.hash.length, 64); // 256-bit
+  assert.ok(chunk.hash.length >= 32);
+});
+
+test('content 3.1: 碰撞一致性——不同内容指纹不同（无 64-bit 截断碰撞）', () => {
+  const c = new Content();
+  // 64-bit 截断下易碰撞的短前缀；完整 SHA-256 下应严格不同
+  const [c1] = c.chunk('aaaa', 4);
+  const [c2] = c.chunk('aaab', 4);
+  const [c3] = c.chunk('aaac', 4);
+  const set = new Set([c1.hash, c2.hash, c3.hash]);
+  assert.equal(set.size, 3);
+});
+
+test('content 3.2: 登记时复核 hash-data 一致性，不一致拒绝', () => {
+  const c = new Content();
+  const [chunk] = c.chunk('abcd', 4);
+  assert.throws(() => c.register({ ...chunk, data: 'tampered' }), /不一致/);
+  assert.equal(c.uniqueCount(), 0); // 未登记污染项
+});
+
+test('content 3.2: lookup 返回前复核，被污染项被剔除', () => {
+  const c = new Content();
+  const [chunk] = c.chunk('abcd', 4);
+  c.register(chunk);
+  // 模拟存储被篡改
+  c._store.get(chunk.hash).data = 'evil';
+  assert.equal(c.lookup(chunk.hash), null); // 一致性复核剔除
+  assert.equal(c.uniqueCount(), 0);
+});
+
 // ---------- 2. storage（缓存 + LRU） ----------
 test('storage: put/get 命中缓存', () => {
   const s = new Storage();
