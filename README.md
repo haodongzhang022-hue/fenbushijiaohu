@@ -5,7 +5,8 @@
 ## 现状
 - 🏗 阶段：M0 架构框架（已完成）+ M0.5 框架 v2 增量
 - 🚀 M1 消息条 MVP 已启动：`packages/core` 四层最小可测代码基已跑通（11 项测试全通过）
-- 🧪 已建立 `bug-bench/` 专门解决 bug 的角色能力评测台（5 个注入 bug 用例，信号灯可红可绿）
+- 🚀 M2 联网策略 / M2a 中继网格+容错 / M3 分布式计算 / M4 内容分发 最小可测代码基已落地（net-policy/relay-mesh/compute/content 四包，共 36 项测试全通过）
+- 🧪 已建立 `bug-bench/` 专门解决 bug 的角色能力评测台（8 个注入 bug 用例，信号灯可红可绿）
 - ⏸ 暂停点：CP1，待批准进入 M1 编码（实质已先行落地最小可测基线）
 
 ## 架构文档
@@ -36,7 +37,11 @@
 | 目录 | 说明 |
 |------|------|
 | `packages/core` | M1 消息条 MVP 核心（identity/policy/session/transport 四层），`npm test` 跑 11 项断言 |
-| `bug-bench` | bug 角色能力评测台，`node bug-bench/run.js` 跑 5 个注入 bug 用例 |
+| `packages/net-policy` | M2 联网策略（policy 增强 + relay NAT 兜底），8 项断言 |
+| `packages/relay-mesh` | M2a 中继网格+容错（health/failover/mesh/multipath），10 项断言 |
+| `packages/compute` | M3 分布式计算（compute/aggregator/verify/reputation），11 项断言 |
+| `packages/content` | M4 内容分发（分片/指纹去重/storage LRU 缓存），7 项断言 |
+| `bug-bench` | bug 角色能力评测台，`node bug-bench/run.js` 跑 8 个注入 bug 用例（22 断言） |
 
 ## 核心能力
 1. **点对点消息直连**（消息条）

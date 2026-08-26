@@ -37,9 +37,13 @@ $:
       docker:
         image: *npc_image
       stages:
-        - name: 测试信号灯（M1 核心 + bug-bench）
+        - name: 测试信号灯（M1 核心 + M2/M2a/M3/M4 + bug-bench）
           script: |
             cd packages/core && npm test 2>&1
+            cd /workspace/packages/net-policy && npm test 2>&1
+            cd /workspace/packages/relay-mesh && npm test 2>&1
+            cd /workspace/packages/compute && npm test 2>&1
+            cd /workspace/packages/content && npm test 2>&1
             cd /workspace && node bug-bench/run.js 2>&1
             node bug-bench/compare.js 2>&1
             echo "信号灯检查完成"
