@@ -151,18 +151,20 @@ test('verify 1.1: 节点身份绑定，同节点重复提交仅计一次（防 S
 test('verify 1.4: 非法 JSON 值被净化，不参与一致性判定', () => {
   const v = new Verify({ minReplicas: 2 });
   // 净化后仅剩合法标量 42（3 次）与 99（1 次）；函数/symbol/原型污染对象被剔除
-  // 严格多数判定：validTotal=4，bestN=3 > 4/2=2 → trusted=true
+  // 严格多数判定：validTotal=3，bestN=3 > 3/2 → trusted=true
   const r = v.verify([42, 42, 42, () => 1, Symbol('x'), { __proto__: { p: 1 }, a: 1 }, 99]);
   assert.equal(r.trusted, true);
   assert.equal(r.result, 42); // 合法且出现次数最多（3 次）
   assert.equal(r.agreement, 3);
 });
 
-test('verify 1.4: 非法 JSON 值净化后不满足严格多数时不可信', () => {
+test('verify 1.4: 原型污染对象被正确剔除，不再稀释多数', () => {
   const v = new Verify();
-  // 净化后仅剩 42（2 次）、{"a":1}（1 次）、99（1 次）：validTotal=4，bestN=2 非 >2 → trusted=false
+  // 原型污染对象 `{__proto__:{p:1},a:1}` 改写了对象原型，须被 isSafeJSON 拒绝；
+  // 净化后仅剩 42（2 次）与 99（1 次）：validTotal=3，bestN=2 > 3/2 → trusted=true
   const r = v.verify([42, 42, () => 1, Symbol('x'), { __proto__: { p: 1 }, a: 1 }, 99]);
-  assert.equal(r.trusted, false);
+  assert.equal(r.trusted, true, '原型污染对象被剔除后 42 构成严格多数');
+  assert.equal(r.result, 42);
   assert.equal(r.agreement, 2);
 });
 

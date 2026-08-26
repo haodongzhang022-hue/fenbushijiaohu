@@ -50,6 +50,9 @@ function isSafeJSON(value) {
     return value.every(isSafeJSON);
   }
   if (t === 'object') {
+    // 检测原型链污染：`{ __proto__: {...} }` 字面量不会成为自有可枚举键，
+    // 而是改写对象原型，须显式检查原型，杜绝原型污染对象混入。
+    if (Object.getPrototypeOf(value) !== Object.prototype) return false; // 非普通对象
     for (const k of Object.keys(value)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') return false;
       if (!isSafeJSON(value[k])) return false;
