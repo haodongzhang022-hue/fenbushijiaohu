@@ -21,6 +21,10 @@ class Aggregator {
    * @returns {{accepted:boolean, sum:number}}
    */
   aggregate(values) {
+    // P2-06 null/undefined 防护：非法入参拒绝，不抛未处理 TypeError
+    if (!Array.isArray(values)) {
+      return { accepted: false, sum: 0 };
+    }
     for (const v of values) {
       if (!this.validate(v)) {
         return { accepted: false, sum: 0 };

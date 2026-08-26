@@ -23,6 +23,10 @@ class Policy {
    * @param {boolean} [natFailed]
    */
   constructor(mode = 'online', natFailed = false) {
+    // P2-01 构造器与 setMode 对齐：校验非法模式
+    if (!['online', 'lan', 'offline'].includes(mode)) {
+      throw new Error(`非法联网模式: ${mode}`);
+    }
     this.mode = mode;
     this.natFailed = natFailed;
   }

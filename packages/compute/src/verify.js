@@ -108,7 +108,9 @@ class Verify {
     let bestKey = null;
     let bestN = 0;
     let bestSample;
+    let validTotal = 0; // 有效结果总数（去重/净化后参与判定的副本数）
     for (const [k, entry] of count) {
+      validTotal += entry.n;
       if (entry.n > bestN) {
         bestN = entry.n;
         bestKey = k;
@@ -119,7 +121,8 @@ class Verify {
     if (bestKey === null) {
       return { trusted: false, result: undefined, agreement: 0 };
     }
-    const trusted = bestN >= this.minReplicas;
+    // P1-01 严格多数判定：一致副本数必须超过有效结果总数的一半
+    const trusted = bestN > validTotal / 2;
     return {
       trusted,
       result: trusted ? bestSample : undefined,

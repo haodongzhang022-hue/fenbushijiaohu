@@ -40,6 +40,16 @@ test('content: 按指纹取回分片', () => {
   assert.equal(c.lookup('nope'), null);
 });
 
+test('content P1-04: chunk(size=0/-1) 不进入死循环，返回合法分片', () => {
+  const c = new Content();
+  const r0 = c.chunk('hello', 0);
+  const rneg = c.chunk('hello', -1);
+  assert.ok(Array.isArray(r0));
+  assert.ok(Array.isArray(rneg));
+  assert.equal(r0.map((x) => x.data).join(''), 'hello');
+  assert.equal(rneg.map((x) => x.data).join(''), 'hello');
+});
+
 test('content 3.1: 指纹升级为完整 SHA-256（≥128-bit，≥32 hex）', () => {
   const c = new Content();
   const [chunk] = c.chunk('abcd', 4);

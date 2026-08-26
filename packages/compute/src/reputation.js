@@ -32,6 +32,14 @@ class Reputation {
   #cooldownMs;
   /** @type {number} */
   #lastRewardTs = 0;
+  /** @type {number} 单会话累计奖励次数（防刷） */
+  #rewardCount = 0;
+  /** @type {number} 单会话累计奖励总量（防刷） */
+  #rewardTotal = 0;
+  /** @type {number} 单会话最多奖励次数 */
+  #maxRewardCount = 16;
+  /** @type {number} 单会话累计奖励总量封顶 */
+  #maxRewardTotal = 30;
   /** @type {Array<object>} 操作溯源日志 */
   #audit = [];
 
@@ -39,6 +47,8 @@ class Reputation {
    * @param {number} [initial]
    * @param {object} [opts]
    * @param {number} [opts.cooldownMs] 两次奖励之间最短间隔（节流，防刷）
+   * @param {number} [opts.maxRewardCount] 单会话最多奖励次数
+   * @param {number} [opts.maxRewardTotal] 单会话累计奖励总量封顶
    */
   constructor(initial = 0, opts = {}) {
     // 初始值允许为负（表示节点已被封禁 banned），但必须是有限数值且封顶 100
@@ -47,6 +57,12 @@ class Reputation {
     }
     this.#score = Math.min(initial, 100);
     this.#cooldownMs = opts.cooldownMs || 0;
+    if (Number.isFinite(opts.maxRewardCount) && opts.maxRewardCount > 0) {
+      this.#maxRewardCount = opts.maxRewardCount;
+    }
+    if (Number.isFinite(opts.maxRewardTotal) && opts.maxRewardTotal > 0) {
+      this.#maxRewardTotal = opts.maxRewardTotal;
+    }
   }
 
   /** 当前信誉分（只读，外部不可直接写） */
@@ -74,14 +90,25 @@ class Reputation {
     assertNonNegativeNumber(points, 'points');
     // 2.1 封禁下界：banned 后不可加分复活
     if (this.#score < 0) return this.#score;
+    // P1-02 次数防刷：单会话奖励次数已达上限则拒绝
+    if (this.#rewardCount >= this.#maxRewardCount) {
+      throw new Error('本会话加分次数已达上限');
+    }
+    // P1-02 累计防刷：单会话累计奖励总量已达封顶则拒绝
+    if (this.#rewardTotal >= this.#maxRewardTotal) {
+      throw new Error('本会话累计加分已达上限');
+    }
     // 2.2 节流：冷却期内忽略本次奖励
     const now = Date.now();
     if (this.#cooldownMs > 0 && now - this.#lastRewardTs < this.#cooldownMs) {
       return this.#score;
     }
     this.#lastRewardTs = now;
-    const inc = Math.min(points, 5); // 单次上限 5
+    // 单次上限 5 分，同时不突破累计封顶
+    const inc = Math.min(points, 5, this.#maxRewardTotal - this.#rewardTotal);
     this.#score = Math.min(100, this.#score + inc);
+    this.#rewardCount += 1;
+    this.#rewardTotal += inc;
     this.#audit.push({ ts: now, op: 'reward', delta: inc, note: opts.note });
     return this.#score;
   }
@@ -103,6 +130,13 @@ class Reputation {
   /** 操作溯源日志（只读副本） */
   auditLog() {
     return this.#audit.map((e) => ({ ...e }));
+  }
+
+  /** 重置单会话防刷计数（跨会话后调用，开启新会话） */
+  resetSession() {
+    this.#rewardCount = 0;
+    this.#rewardTotal = 0;
+    this.#lastRewardTs = 0;
   }
 }
 

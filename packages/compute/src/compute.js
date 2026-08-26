@@ -66,8 +66,10 @@ class Compute {
   split(taskId, parts) {
     const task = this._tasks.get(taskId);
     if (!task) throw new Error('任务不存在');
+    // P3-02 步长下限保护：parts 非法（<=0 或非数）时按 1 处理，杜绝死循环/除零
+    const p = Number.isFinite(parts) && parts > 0 ? parts : 1;
     const chunks = [];
-    const step = Math.max(1, Math.ceil(task.input.length / parts));
+    const step = Math.max(1, Math.ceil(task.input.length / p));
     for (let i = 0; i < task.input.length; i += step) {
       chunks.push(task.input.slice(i, i + step));
     }

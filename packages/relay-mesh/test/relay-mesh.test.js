@@ -39,6 +39,12 @@ test('health: 窗口只保留最近 N 次心跳', () => {
   assert.equal(h.availability('n1'), 1);
 });
 
+test('health P3-01: window/threshold=0 不被 || 覆盖为默认值', () => {
+  const h = new HealthMonitor({ window: 0, threshold: 0 });
+  assert.equal(h.window, 0);       // 0 不被覆盖为默认 10
+  assert.equal(h.threshold, 0);    // 0 不被覆盖为默认 0.7
+});
+
 // ---------- 2. failover（故障切换） ----------
 test('failover: 健康节点不触发切换', () => {
   const h = new HealthMonitor({ threshold: 0.7 });

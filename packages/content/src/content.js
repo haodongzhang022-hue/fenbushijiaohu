@@ -25,11 +25,13 @@ class Content {
    * @param {number} [size] 分片大小
    */
   chunk(data, size = 4) {
+    // P1-04 死循环防护：size<=0 或非数时按 1 处理，杜绝死循环
+    const s = Number.isFinite(size) && size > 0 ? size : 1;
     const chunks = [];
-    for (let i = 0; i < data.length; i += size) {
-      const piece = data.slice(i, i + size);
+    for (let i = 0; i < data.length; i += s) {
+      const piece = data.slice(i, i + s);
       const hash = this._hash(piece);
-      chunks.push({ seq: i / size, hash, data: piece });
+      chunks.push({ seq: i / s, hash, data: piece });
     }
     return chunks;
   }

@@ -45,6 +45,15 @@ test('policy: 非法模式抛错', () => {
   assert.throws(() => p.setMode('unknown'), /非法联网模式/);
 });
 
+test('policy P2-01: 构造器校验非法模式，与 setMode 对齐', () => {
+  assert.throws(() => new Policy('hacker-mode'), /非法联网模式/);
+  assert.throws(() => new Policy('illegal'), /非法联网模式/);
+  // 合法模式不受影响
+  assert.doesNotThrow(() => new Policy('online'));
+  assert.doesNotThrow(() => new Policy('lan'));
+  assert.doesNotThrow(() => new Policy('offline'));
+});
+
 // ---------- 2. relay（NAT 兜底转发） ----------
 test('relay: NAT 失败经中继兜底转发成功', async () => {
   const mesh = { findRelay: (targetId) => ({ id: `relay-${targetId}`, addr: '127.0.0.1:9000', cost: 1 }) };

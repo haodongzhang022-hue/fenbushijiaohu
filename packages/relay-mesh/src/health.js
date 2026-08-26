@@ -13,8 +13,9 @@ class HealthMonitor {
    * @param {number} [opts.threshold] 健康阈值（0~1）
    */
   constructor(opts = {}) {
-    this.window = opts.window || 10;
-    this.threshold = opts.threshold || 0.7;
+    // P3-01 0 不被 || 覆盖为默认值
+    this.window = Number.isFinite(opts.window) ? opts.window : 10;
+    this.threshold = Number.isFinite(opts.threshold) ? opts.threshold : 0.7;
     this._heartbeats = new Map(); // nodeId -> boolean[]（最近窗口心跳是否成功）
   }
 
