@@ -1,10 +1,10 @@
 {
   "name": "@fenbushijiaohu/compute",
   "version": "0.1.0",
-  "description": "分布式计算层（M3）：任务切分/聚合/校验/信誉",
+  "description": "分布式计算层（M3）：任务切分/聚合/校验/信誉 + M6 治理与信誉",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/compute.test.js"
+    "test": "node --test test/compute.test.js test/governance.test.js"
   },
   "engines": {
     "node": ">=16"

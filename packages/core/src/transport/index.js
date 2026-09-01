@@ -1,64 +1,50 @@
 'use strict';
 /**
- * transport 模块 —— 传输抽象（M1 最小实现）
+ * transport 模块 —— 传输抽象（P0 真实传输适配器接入）
  *
- * 架构师接口契约（04 §3.3）：
+ * 提供统一 Transport 接口契约，支持多种传输实现可插拔切换：
+ *   - MemoryTransport   ：内存模拟（测试用，原有）
+ *   - WebRTCTransport   ：浏览器 P2P（DTLS 加密，STUN/TURN 穿透）
+ *   - Libp2pTransport   ：Node/服务端 P2P（Noise 加密，yamux 多路）
+ *
+ * 对齐 16 号文档 §5 真实传输层设计 + 04 §3.3 接口契约：
  *   interface Transport {
- *     connect(peer: PeerDesc): Promise<Channel>;
- *     listen(cb: (msg: Message) => void): void;
+ *     async connect(peer, signaling): Promise<Channel>;
+ *     listen(cb): void;
+ *     send(channel, chunk): Promise<boolean>;
+ *     onData(cb): void;
  *     close(): void;
  *   }
- *
- * 本实现提供一个**基于内存/回调的测试用传输**（MemoryTransport），
- * 用于本地跑通"两节点直连收发消息"闭环，不依赖真实 WebRTC/libp2p。
- * 真实适配器（WebRTC/libp2p）后续按同一接口契约接入。
  */
 
-class MemoryTransport {
-  /**
-   * @param {string} nodeId 本地节点标识
-   */
-  constructor(nodeId) {
-    this.nodeId = nodeId;
-    this._listener = null;   // 收消息回调
-    this._peer = null;       // 对端节点 id（简化：一对一）
-    this._closed = false;
-  }
+const { Transport } = require('./transport');
+const { MemoryTransport } = require('./memory');
+const { WebRTCTransport } = require('./webrtc');
+const { Libp2pTransport } = require('./libp2p');
 
-  /**
-   * 建立与对端的连接（测试环境：直接互绑）
-   * @param {{id: string}} peerDesc 对端描述（内存模式下仅需 id）
-   */
-  async connect(peerDesc) {
-    if (this._closed) throw new Error('transport 已关闭');
-    this._peer = peerDesc.id;
-    return { id: this.nodeId, peer: this._peer };
-  }
-
-  /**
-   * 注册收消息回调
-   * @param {(msg: object) => void} cb
-   */
-  listen(cb) {
-    this._listener = cb;
-  }
-
-  /**
-   * 向对端发送一条消息（测试环境：直接投递到对端 listener）
-   * @param {object} msg
-   * @param {MemoryTransport} peerTransport 对端传输实例（测试注入）
-   */
-  send(msg, peerTransport) {
-    if (this._closed) throw new Error('transport 已关闭');
-    if (peerTransport && peerTransport._listener) {
-      peerTransport._listener({ ...msg, receivedAt: Date.now() });
-    }
-    return true;
-  }
-
-  close() {
-    this._closed = true;
+/**
+ * 工厂：按类型创建传输实例
+ * @param {'memory'|'webrtc'|'libp2p'} type
+ * @param {string} nodeId
+ * @param {object} [opts]
+ */
+function createTransport(type, nodeId, opts = {}) {
+  switch (type) {
+    case 'memory':
+      return new MemoryTransport(nodeId, opts);
+    case 'webrtc':
+      return new WebRTCTransport(nodeId, opts);
+    case 'libp2p':
+      return new Libp2pTransport(nodeId, opts);
+    default:
+      throw new Error(`未知传输类型: ${type}`);
   }
 }
 
-module.exports = { MemoryTransport };
+module.exports = {
+  Transport,
+  MemoryTransport,
+  WebRTCTransport,
+  Libp2pTransport,
+  createTransport,
+};

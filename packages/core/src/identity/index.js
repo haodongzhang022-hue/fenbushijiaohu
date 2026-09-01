@@ -1,6 +1,6 @@
 'use strict';
 /**
- * identity 模块 —— 身份签名（M1 最小实现）
+ * identity 模块 —— 身份签名 + Keystore 持久化（M1 + P1）
  *
  * 架构师接口契约（04 §3.1）：
  *   interface Identity {
@@ -9,18 +9,16 @@
  *     verify(pubKey, msg, sig): boolean;
  *   }
  *
- * 为保持最小可测、零外部依赖，本实现使用 Node 内置 crypto 的 Ed25519
- * （Node >= 12 的 crypto.sign / crypto.verify 支持 Ed25519）。
- * 这是纯逻辑层，不绑定任何平台。
+ * P1 增强：Keystore 本地加密持久化（16 号文档 §6）。
  */
 const crypto = require('crypto');
+const { Keystore } = require('./keystore');
 
 class Identity {
   /**
    * @param {crypto.KeyObject} [keyPair] 已生成的密钥对；不传则自动生成
    */
   constructor(keyPair) {
-    // 复用或生成 Ed25519 密钥对
     this._keyPair = keyPair || crypto.generateKeyPairSync('ed25519');
     this._publicKey = this._keyPair.publicKey.export({ type: 'spki', format: 'der' });
     this._privateKey = this._keyPair.privateKey.export({ type: 'pkcs8', format: 'der' });
@@ -67,4 +65,4 @@ class Identity {
   }
 }
 
-module.exports = { Identity };
+module.exports = { Identity, Keystore };

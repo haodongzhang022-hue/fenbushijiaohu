@@ -1,0 +1,13 @@
+{
+  "name": "@fenbushijiaohu/app",
+  "version": "0.1.0",
+  "description": "分布式交互应用层（M5）：游戏大厅 lobby + 联邦协议 fed",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/app.test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
