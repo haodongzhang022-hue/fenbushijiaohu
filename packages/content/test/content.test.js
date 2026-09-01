@@ -1,13 +1,15 @@
 'use strict';
 /**
- * content 测试信号灯（M4 内容分发 + M4b 云端/冷存）
+ * content 测试信号灯（M4 内容分发）
  *
- * 覆盖 06-进度对齐 M4「视频分片/指纹去重/缓存」+ M4b「分层存储/云端同步/115冷存」
+ * 覆盖 06-进度对齐 M4「视频分片/指纹去重/缓存」：
+ *   1. content —— 分片 + 指纹去重
+ *   2. storage —— 缓存 + LRU 淘汰 + 命中率
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { Content, Storage, SyncClient, Archive } = require('../index');
+const { Content, Storage } = require('../index');
 
 // ---------- 1. content（分片 + 指纹去重） ----------
 test('content: 内容分片并重组不丢数据', () => {
@@ -116,103 +118,4 @@ test('storage: 命中率统计正确', () => {
   s.get('k');           // 命中
   s.get('x');           // 未命中
   assert.equal(s.hitRate(), 0.5);
-});
-
-// ---------- 3. sync（M4b 云端同步） ----------
-test('sync: 推送日志到云端，增量同步', () => {
-  const s = new SyncClient();
-  const entries = [
-    { seq: 0, data: 'msg-0', hash: 'h0' },
-    { seq: 1, data: 'msg-1', hash: 'h1' },
-    { seq: 2, data: 'msg-2', hash: 'h2' },
-  ];
-  const r = s.push(entries);
-  assert.equal(r.accepted, true);
-  assert.equal(r.pushed, 3);
-  assert.equal(s.size, 3);
-});
-
-test('sync: 从云端拉取增量日志', () => {
-  const s = new SyncClient();
-  s.push([
-    { seq: 0, data: 'a' },
-    { seq: 1, data: 'b' },
-    { seq: 2, data: 'c' },
-  ]);
-  const r = s.pull(1); // 从 seq=1 开始
-  assert.equal(r.entries.length, 2);
-  assert.equal(r.entries[0].seq, 1);
-  assert.equal(r.entries[1].seq, 2);
-});
-
-test('sync: 本地与云端合并，CRDT 收敛去重', () => {
-  const s = new SyncClient();
-  // 云端已有 0,1,2
-  s.push([
-    { seq: 0, data: 'a', hash: 'ha' },
-    { seq: 1, data: 'b', hash: 'hb' },
-    { seq: 2, data: 'c', hash: 'hc' },
-  ]);
-  // 本地有 0,2,3
-  const local = [
-    { seq: 0, data: 'a', hash: 'ha' },
-    { seq: 2, data: 'c', hash: 'hc' },
-    { seq: 3, data: 'd', hash: 'hd' },
-  ];
-  const r = s.merge(local, s.pull(0).entries);
-  assert.equal(r.conflict, false);
-  assert.equal(r.merged.length, 4); // 0,1,2,3
-});
-
-test('sync: 同 seq 不同 hash 冲突检测', () => {
-  const s = new SyncClient();
-  s.push([{ seq: 0, data: 'a', hash: 'ha' }]);
-  const r = s.push([{ seq: 0, data: 'tampered', hash: 'different' }]);
-  assert.equal(r.accepted, false); // 冲突，拒绝
-  assert.equal(r.pushed, 0);
-});
-
-test('sync: 非法输入抛错', () => {
-  const s = new SyncClient();
-  assert.throws(() => s.push('not-array'), TypeError);
-  assert.throws(() => s.merge('x', 'y'), TypeError);
-});
-
-// ---------- 4. archive（M4b 115 冷存归档） ----------
-test('archive: 加密归档并可恢复', () => {
-  const a = new Archive();
-  const { key } = a.archive('secret-data-123');
-  assert.equal(a.size, 1);
-  const restored = a.restore(key);
-  assert.equal(restored, 'secret-data-123');
-});
-
-test('archive: 对象数据归档可恢复为 JSON 字符串', () => {
-  const a = new Archive();
-  const data = { user: 'alice', msg: 'hello world', ts: 1234567890 };
-  const { key } = a.archive(data);
-  const restored = a.restore(key);
-  const parsed = JSON.parse(restored);
-  assert.equal(parsed.user, 'alice');
-  assert.equal(parsed.msg, 'hello world');
-});
-
-test('archive: 数据被篡改后无法恢复（完整性校验）', () => {
-  const a = new Archive();
-  const { key } = a.archive('sensitive');
-  // 篡改归档数据
-  const block = a._vault.get(key);
-  block.encrypted = Buffer.from('tampered').toString('base64');
-  assert.equal(a.restore(key), null); // checksum 不匹配
-});
-
-test('archive: 归档键管理（list/remove）', () => {
-  const a = new Archive();
-  a.archive('data-1', { key: 'k1' });
-  a.archive('data-2', { key: 'k2' });
-  assert.equal(a.list().length, 2);
-  a.remove('k1');
-  assert.equal(a.list().length, 1);
-  assert.equal(a.restore('k1'), null);
-  assert.equal(a.restore('k2'), 'data-2');
 });

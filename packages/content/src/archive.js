@@ -1,114 +1,250 @@
 'use strict';
 /**
- * archive 模块 —— 115 冷存归档（M4b）
+ * archive 模块 —— 115 冷存归档（M4b-B）
  *
- * 对齐 09-审查补充与增强 §4.2 对接 115 冷存储：
- *   - 本地数据加密后打包成归档块
- *   - 定期将增量评论/视频元数据/信誉快照上传到 115 目录
- *   - 仅存加密归档，115 侧无法读取明文
- *   - 提供一键恢复：从 115 拉取归档解包还原
+ * 对齐 16-M4bM5M6与传输层设计 §2（Archive115）：
+ *   将增量账本加密打包上传 115，支持一键恢复。
  *
- * 设计：
- *   - 归档块 = { version, createdAt, encrypted: base64密文, checksum }
- *   - 加密用简单的 XOR+base64（纯逻辑包演示），生产环境应换强加密
- *   - 归档后端模拟为内存 Map（未来对接 115 API）
- *   - 归档包可通过解密和 checksum 校验恢复
+ *   设计要点：
+ *   - 冷存定位"防丢失"而非"热读"，规避高延迟冷存被当在线存储
+ *   - archive(ledgerDelta)：加密 → 打包 → 上传 115
+ *   - restore(cursor)：从 115 拉取 → 解密 → 还原
+ *   - schedule(periodDays)：定期归档调度
  *
- *   class Archive {
- *     archive(data): {key, block};   // 加密归档
- *     restore(key): data|null;       // 解密恢复
- *     list(): Array<key>;            // 列出归档
- *   }
+ *   R-115-限制 [HIGH]：115 仅授权归档后端，需处理 OAuth 过期续期、
+ *   配额上限、上传速率限制。加密层用 AES-256-GCM 对称加密。
+ *
+ *   状态机：idle→encrypting→uploading→archived→restoring
  */
 const crypto = require('crypto');
 
-class Archive {
-  constructor() {
-    this._vault = new Map(); // key -> { encrypted, checksum, createdAt }
-    this._keys = new Map();  // key -> encryptionKey（演示用，生产应存本地）
-  }
-
+class Archive115 {
   /**
-   * 将数据加密并归档到冷存
-   * @param {string|object} data 待归档数据
    * @param {object} [opts]
-   * @param {string} [opts.key] 指定归档键（缺省自动生成）
-   * @returns {{key:string, block:object}}
+   * @param {CloudSync} [opts.sync] CloudSync 实例（取账本增量）
+   * @param {object} [opts.archiveAdapter] 115 归档适配器（save/load/list），缺省为内存模拟
+   * @param {string} [opts.encryptionKey] 加密密钥（默认自动生成临时密钥）
    */
-  archive(data, opts = {}) {
-    const raw = typeof data === 'string' ? data : JSON.stringify(data);
-    const key = opts.key || `arch-${crypto.randomBytes(8).toString('hex')}-${Date.now()}`;
-    const encryptionKey = crypto.randomBytes(32).toString('hex');
-    const encrypted = this._encrypt(raw, encryptionKey);
-    const checksum = crypto.createHash('sha256').update(encrypted).digest('hex');
-    const block = {
-      version: 1,
-      key,
-      encrypted,
-      checksum,
-      createdAt: Date.now(),
-    };
-    this._vault.set(key, block);
-    this._keys.set(key, encryptionKey);
-    return { key, block };
+  constructor(opts = {}) {
+    this._sync = opts.sync || null;
+    this._archive = opts.archiveAdapter || { _map: new Map() };
+    this._encryptionKey = opts.encryptionKey || crypto.randomBytes(32).toString('hex');
+    this._state = 'idle';
+    this._archives = [];       // 归档记录 [{ archiveId, cursor, timestamp }]
+    this._scheduleTimer = null;
+    this._periodDays = 7;      // 默认每 7 天归档一次
+    this._error = null;
   }
 
   /**
-   * 从冷存恢复数据
-   * @param {string} key 归档键
-   * @returns {string|null} 解密后的原始数据
+   * 将账本增量加密打包上传 115。
+   * @param {Array} [ledgerDelta] 账本增量条目（默认取 sync 的完整账本）
+   * @param {number} [cursor] 归档截至的游标
+   * @returns {{archiveId:string, entries:number, cursor:number}}
    */
-  restore(key) {
-    const block = this._vault.get(key);
-    if (!block) return null;
-    // 完整性校验
-    const actual = crypto.createHash('sha256').update(block.encrypted).digest('hex');
-    if (actual !== block.checksum) {
-      return null; // 数据被篡改
-    }
-    const encryptionKey = this._keys.get(key);
-    if (!encryptionKey) return null;
-    return this._decrypt(block.encrypted, encryptionKey);
-  }
-
-  /** 列出所有归档键 */
-  list() {
-    return [...this._vault.keys()];
-  }
-
-  /** 删除归档 */
-  remove(key) {
-    this._vault.delete(key);
-    this._keys.delete(key);
-  }
-
-  /** 归档数量 */
-  get size() {
-    return this._vault.size;
-  }
-
-  /** 演示用对称加密：AES-256-CTR */
-  _encrypt(data, keyHex) {
-    const key = Buffer.from(keyHex, 'hex');
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv('aes-256-ctr', key, iv);
-    const encrypted = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
-    return Buffer.concat([iv, encrypted]).toString('base64');
-  }
-
-  /** 演示用对称解密 */
-  _decrypt(base64, keyHex) {
+  async archive(ledgerDelta, cursor) {
+    this._state = 'encrypting';
     try {
-      const buf = Buffer.from(base64, 'base64');
-      const iv = buf.subarray(0, 16);
-      const encrypted = buf.subarray(16);
-      const key = Buffer.from(keyHex, 'hex');
-      const decipher = crypto.createDecipheriv('aes-256-ctr', key, iv);
-      return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-    } catch {
-      return null;
+      const entries = ledgerDelta || (this._sync ? this._sync.getLedger() : []);
+      if (!Array.isArray(entries) || entries.length === 0) {
+        return { archiveId: null, entries: 0, cursor: cursor || 0 };
+      }
+      const maxCursor = cursor != null
+        ? cursor
+        : (entries.length > 0 ? Math.max(...entries.map((e) => e.seq || 0)) : 0);
+
+      // 1. 加密
+      const encrypted = this._encrypt(entries);
+      // 2. 打包 + 生成 archiveId
+      const archiveId = this._hash(`${Date.now()}:${maxCursor}`);
+      const bundle = {
+        archiveId,
+        cursor: maxCursor,
+        encrypted,
+        timestamp: Date.now(),
+        entryCount: entries.length,
+      };
+      // 3. 上传 115
+      this._state = 'uploading';
+      await this._archiveSave(archiveId, bundle);
+
+      // 4. 在适配器中登记索引（供 restore 发现）
+      await this._archiveAddIndex(bundle);
+
+      this._archives.push({
+        archiveId,
+        cursor: maxCursor,
+        timestamp: bundle.timestamp,
+        entryCount: entries.length,
+      });
+      this._state = 'archived';
+      return { archiveId, entries: entries.length, cursor: maxCursor };
+    } catch (err) {
+      this._state = 'error';
+      this._error = err;
+      throw err;
     }
+  }
+
+  /**
+   * 从 115 拉取归档 → 解密 → 还原账本。
+   * @param {number} [cursor] 还原截至的游标（缺省还原最新归档）
+   * @returns {{entries:Array, archiveId:string, cursor:number}}
+   */
+  async restore(cursor) {
+    this._state = 'restoring';
+    try {
+      // 从适配器中读取全部归档索引
+      const allArchives = await this._archiveList();
+      const target = this._findBestArchive(allArchives, cursor);
+      if (!target) {
+        return { entries: [], archiveId: null, cursor: cursor || 0 };
+      }
+      const bundle = await this._archiveLoad(target.archiveId);
+      if (!bundle) {
+        return { entries: [], archiveId: null, cursor: cursor || 0 };
+      }
+      // 解密还原
+      const entries = this._decrypt(bundle.encrypted);
+      this._state = 'archived';
+      return { entries, archiveId: bundle.archiveId, cursor: bundle.cursor };
+    } catch (err) {
+      this._state = 'error';
+      this._error = err;
+      throw err;
+    }
+  }
+
+  /**
+   * 定期归档调度。
+   * @param {number} [periodDays] 归档周期（天）
+   * @returns {Archive115} this（便于链式调用）
+   */
+  async schedule(periodDays = 7) {
+    this._periodDays = periodDays > 0 ? periodDays : 7;
+    // 立即执行一次
+    await this.archive(this._sync ? this._sync.getLedger() : []);
+    // 设置定时器（真实环境中用 setInterval，测试环境可注入）
+    if (typeof setInterval === 'function' && !this._scheduleTimer) {
+      this._scheduleTimer = setInterval(async () => {
+        try {
+          await this.archive(this._sync ? this._sync.getLedger() : []);
+        } catch (err) {
+          this._error = err;
+        }
+      }, this._periodDays * 24 * 3600 * 1000);
+    }
+    return this;
+  }
+
+  /** 停止定时归档 */
+  stopSchedule() {
+    if (this._scheduleTimer && typeof clearInterval === 'function') {
+      clearInterval(this._scheduleTimer);
+      this._scheduleTimer = null;
+    }
+  }
+
+  /** 归档记录列表（只读） */
+  listArchives() {
+    return this._archives.map((a) => ({ ...a }));
+  }
+
+  /** 获取当前状态 */
+  getState() {
+    return this._state;
+  }
+
+  /** 获取归档周期 */
+  getPeriodDays() {
+    return this._periodDays;
+  }
+
+  /** 最近一次归档的 archiveId（无则 null） */
+  getLastArchiveId() {
+    return this._archives.length > 0 ? this._archives[this._archives.length - 1].archiveId : null;
+  }
+
+  /** AES-256-GCM 加密 */
+  _encrypt(data) {
+    const key = Buffer.from(this._encryptionKey, 'hex');
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const plain = Buffer.from(JSON.stringify(data), 'utf8');
+    const encrypted = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return { iv: iv.toString('hex'), tag: tag.toString('hex'), data: encrypted.toString('hex') };
+  }
+
+  /** AES-256-GCM 解密 */
+  _decrypt(payload) {
+    const key = Buffer.from(this._encryptionKey, 'hex');
+    const iv = Buffer.from(payload.iv, 'hex');
+    const tag = Buffer.from(payload.tag, 'hex');
+    const data = Buffer.from(payload.data, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+  }
+
+  /** 指纹（SHA-256） */
+  _hash(str) {
+    return crypto.createHash('sha256').update(String(str)).digest('hex');
+  }
+
+  /** 找到最合适的归档（cursor <= 目标 且 最接近） */
+  _findBestArchive(allArchives, cursor) {
+    if (!allArchives || allArchives.length === 0) return null;
+    const sorted = [...allArchives].sort((a, b) => a.cursor - b.cursor);
+    // 找到 cursor <= 目标 且最接近的
+    let best = null;
+    for (const a of sorted) {
+      if (cursor == null || a.cursor <= cursor) best = a;
+    }
+    return best || sorted[0]; // 若全大于 cursor，取最早的
+  }
+
+  /** 115 保存归档 */
+  async _archiveSave(id, bundle) {
+    if (this._archive && typeof this._archive.save === 'function') {
+      return this._archive.save(id, bundle);
+    }
+    if (!this._archive._map) this._archive._map = new Map();
+    this._archive._map.set(id, bundle);
+    return true;
+  }
+
+  /** 115 读取归档 */
+  async _archiveLoad(id) {
+    if (this._archive && typeof this._archive.load === 'function') {
+      return this._archive.load(id);
+    }
+    if (!this._archive._map) return null;
+    return this._archive._map.get(id) || null;
+  }
+
+  /** 在适配器中登记索引 */
+  async _archiveAddIndex(bundle) {
+    // 尝试存储索引到专用键
+    const indexKey = '__ARCHIVE_INDEX__';
+    const index = await this._archiveLoad(indexKey) || { items: [] };
+    const items = Array.isArray(index.items) ? index.items : [];
+    items.push({
+      archiveId: bundle.archiveId,
+      cursor: bundle.cursor,
+      timestamp: bundle.timestamp,
+      entryCount: bundle.entryCount,
+    });
+    await this._archiveSave(indexKey, { items });
+  }
+
+  /** 从适配器读取全部归档索引 */
+  async _archiveList() {
+    const index = await this._archiveLoad('__ARCHIVE_INDEX__');
+    if (index && Array.isArray(index.items)) return index.items;
+    return [];
   }
 }
 
-module.exports = { Archive };
+module.exports = { Archive115 };
