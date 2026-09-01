@@ -1,10 +1,10 @@
 {
   "name": "@fenbushijiaohu/content",
   "version": "0.1.0",
-  "description": "分布式内容分发层（M4）：视频分片/指纹去重/缓存存储",
+  "description": "分布式内容分发层（M4）：视频分片/指纹去重/缓存存储 + M4b 云端同步/冷存归档",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/content.test.js"
+    "test": "node --test test/content.test.js test/m4b.test.js"
   },
   "engines": {
     "node": ">=16"
