@@ -3,11 +3,13 @@
 > 让多个用户直接通讯、贡献算力聚合、内容（视频）传播，实现**话语权回归本地、自愿联网、跨平台跨游戏**的分布式体系。
 
 ## 现状
-- 🏗 阶段：M0 架构框架（已完成）+ M0.5 框架 v2 增量（80%）
-- 🚀 **6 包 124 项测试全绿 + bug-bench 12 用例 40 断言全绿**
+- 🏗 阶段：M0.5 框架 v2 增量（**100%**）+ 代码基全部落地
+- 🚀 **6 包 133 项测试全绿 + bug-bench 16 用例 57 断言全绿**
 - ✅ M1 消息条 MVP / M2 联网策略 / M2a 中继网格 / M3 分布式计算 / M4 内容分发 / M4b 分层存储+云端+115 冷存
 - ✅ M5 游戏大厅（Lobby+Fed）/ M6 治理信誉（Reputation+Governance）/ 真实传输适配器（WebRTC+Libp2p）/ 身份 Keystore
-- 🧪 bug-bench 评测台已扩充至 12 用例（40 断言），覆盖多节点收敛/传输可靠性/口令安全/延迟预算
+- ✅ **信令服务（SignalingServer）已落地**：房间模型 + SDP/ICE 交换 + multiaddr 路由
+- ✅ **G5 front-matter 统一**：全部架构文档已按规范添加 YAML 元数据
+- 🧪 bug-bench 评测台已扩充至 **16 用例（57 断言）**，覆盖信令路由/重连/暴力破解/容量约束等
 
 ## 架构文档
 | 文档 | 说明 |
@@ -40,21 +42,22 @@
 ## 代码基与评测台
 | 包 | 里程碑 | 测试 | 说明 |
 |----|--------|------|------|
-| `packages/core` | M1 + P0 + P1 | 20 | identity/keystore/policy/session/transport（WebRTC/libp2p） |
+| `packages/core` | M1 + P0 + P1 | **29** | identity/keystore/policy/session/transport/signaling（WebRTC/libp2p） |
 | `packages/net-policy` | M2 | 9 | 联网策略 + relay NAT 兜底 |
 | `packages/relay-mesh` | M2a | 14 | health/failover/mesh/multipath |
 | `packages/compute` | M3 + M6 | 40 | compute/aggregator/verify/reputation/governance |
 | `packages/content` | M4 + M4b | 29 | content/storage/CloudSync/Archive115 |
 | `packages/app` | M5 | 12 | lobby/fed |
-| `bug-bench` | 评测台 | 40 (12 cases) | 8 原用例 + 4 新用例（多节点/传输/口令/延迟） |
+| `bug-bench` | 评测台 | **57 (16 cases)** | 含信令路由/重连/暴力破解/容量约束 |
 
-> **合计 6 包 124 项测试全绿 + bug-bench 40 断言全绿**
+> **合计 6 包 133 项测试全绿 + bug-bench 57 断言全绿**
 
 ## 核心能力
-1. **点对点消息直连**（消息条）
+1. **点对点消息直连**（消息条 + 信令服务）
 2. **分布式计算聚合**（算力/带宽贡献者）
 3. **内容传播**（尤其视频）
 4. **低延迟游戏大厅**（跨游戏连线）
 5. **话语权回归**（本地优先 + 自愿联网 + 跨平台）
 6. **分层存储+云端同步+115 冷存**（防丢失加密归档）
 7. **治理与信誉**（举报/分级处置/单向棘轮防刷分）
+8. **真实传输适配**（WebRTC/libp2p + 信令服务 SDP/ICE 交换）

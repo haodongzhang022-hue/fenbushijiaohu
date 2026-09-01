@@ -1,3 +1,15 @@
+---
+id: 13
+title: 专门解决 bug 的角色能力评测方案
+role: 测试
+status: active
+depends: [04]
+inputs: [ISSUE#6]
+outputs: [评测方案, bug-bench 评测台]
+risks: []
+owner: zhongguoliandanshidongdong
+---
+
 # 13 · 专门解决 bug 的角色 · 能力评测方案
 
 > 状态：v0.1 草案

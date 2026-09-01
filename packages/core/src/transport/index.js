@@ -6,6 +6,7 @@
  *   - MemoryTransport   ：内存模拟（测试用，原有）
  *   - WebRTCTransport   ：浏览器 P2P（DTLS 加密，STUN/TURN 穿透）
  *   - Libp2pTransport   ：Node/服务端 P2P（Noise 加密，yamux 多路）
+ *   - SignalingServer   ：信令服务（SDP/ICE 交换，真实网络建连）
  *
  * 对齐 16 号文档 §5 真实传输层设计 + 04 §3.3 接口契约：
  *   interface Transport {
@@ -21,6 +22,7 @@ const { Transport } = require('./transport');
 const { MemoryTransport } = require('./memory');
 const { WebRTCTransport } = require('./webrtc');
 const { Libp2pTransport } = require('./libp2p');
+const { SignalingServer, SignalingSession, createSignaling } = require('./signaling');
 
 /**
  * 工厂：按类型创建传输实例
@@ -46,5 +48,8 @@ module.exports = {
   MemoryTransport,
   WebRTCTransport,
   Libp2pTransport,
+  SignalingServer,
+  SignalingSession,
+  createSignaling,
   createTransport,
 };
