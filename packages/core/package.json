@@ -4,7 +4,7 @@
   "description": "分布式交互核心层（M1 最小可测 MVP）：identity/policy/session/transport + signaling",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/core.test.js test/signaling.test.js"
+    "test": "node --test test/core.test.js test/signaling.test.js test/net.test.js"
   },
   "engines": {
     "node": ">=16"
