@@ -11,6 +11,9 @@ const {
   MemoryTransport,
   WebRTCTransport,
   Libp2pTransport,
+  SignalingServer,
+  SignalingSession,
+  createSignaling,
   createTransport,
 } = require('./src/transport');
 
@@ -24,5 +27,8 @@ module.exports = {
   MemoryTransport,
   WebRTCTransport,
   Libp2pTransport,
+  SignalingServer,
+  SignalingSession,
+  createSignaling,
   createTransport,
 };
