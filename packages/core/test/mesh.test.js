@@ -8,6 +8,9 @@
  *   3. 广播可达 mesh 内全部其它节点
  *   4. 节点掉线后 mesh 拓扑感知
  *   5. NetTransport/encodeFrame 顶层导出（修复 index.js 遗漏）
+ *   6. removeNode 后其余节点拓扑不残留被删节点（评审修复）
+ *   7. addNode 建连失败回滚并抛错不残留（评审修复）
+ *   8. close 注入外部 registry 不误清外部条目（评审修复）
  */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -180,4 +183,78 @@ test('netmesh: 5 节点大规模 mesh 稳定性', async () => {
   }
 
   mesh.close();
+});
+
+// ---------- 9. removeNode 后其余节点拓扑不残留被删节点 ----------
+test('netmesh: removeNode 后其余节点拓扑不残留被删节点', async () => {
+  const mesh = new NetMesh();
+  await mesh.addNode('A');
+  await mesh.addNode('B');
+  await mesh.addNode('C');
+  assert.strictEqual(mesh.size, 3);
+
+  // 确认移除前各节点 peer 数为 2
+  const topoBefore = mesh.getTopology();
+  for (const node of topoBefore) {
+    assert.strictEqual(node.peers.length, 2, `移除前 ${node.id} 应有 2 个 peer`);
+  }
+
+  mesh.removeNode('C');
+
+  // 剩余节点 A/B 的拓扑中不应再包含 C
+  const topoAfter = mesh.getTopology();
+  assert.strictEqual(topoAfter.length, 2);
+  for (const node of topoAfter) {
+    assert.ok(!node.peers.includes('C'), `${node.id} 的 peers 不应包含已移除的 C`);
+    assert.strictEqual(node.peers.length, 1, `${node.id} 移除 C 后应只剩 1 个 peer`);
+  }
+  assert.strictEqual(mesh.has('C'), false);
+
+  mesh.close();
+});
+
+// ---------- 10. addNode 建连失败回滚并抛错 ----------
+test('netmesh: addNode 建连失败回滚并抛错不残留', async () => {
+  const mesh = new NetMesh();
+  await mesh.addNode('A');
+  assert.strictEqual(mesh.size, 1);
+
+  // 破坏 A 在 registry 中的地址（指向不可达端口 1）
+  mesh._registry['A'] = { host: '127.0.0.1', port: 1 };
+
+  // 尝试添加 B → B connect A 时因地址不可达而失败
+  await assert.rejects(
+    () => mesh.addNode('B'),
+    /无法与以下既有节点建连/
+  );
+
+  // 回滚后 B 不应残留
+  assert.strictEqual(mesh.size, 1);
+  assert.strictEqual(mesh.has('B'), false);
+  assert.strictEqual(mesh.nodeIds.includes('B'), false);
+  // A 仍然在 mesh 中
+  assert.strictEqual(mesh.has('A'), true);
+
+  mesh.close();
+});
+
+// ---------- 11. close 注入外部 registry 不误清外部条目 ----------
+test('netmesh: close 注入外部 registry 不误清外部条目', async () => {
+  // 预置外部 registry 数据
+  const externalRegistry = {
+    EXTERNAL_1: { host: '127.0.0.1', port: 10001 },
+    EXTERNAL_2: { host: '127.0.0.1', port: 10002 },
+  };
+
+  const mesh = new NetMesh({ registry: externalRegistry });
+  await mesh.addNode('A');
+  await mesh.addNode('B');
+  assert.strictEqual(mesh.size, 2);
+  assert.ok(externalRegistry['A'], 'A 应已写入外部 registry');
+
+  mesh.close();
+
+  // 外部无关条目应保留
+  assert.ok(externalRegistry['EXTERNAL_1'], '外部条目 EXTERNAL_1 应保留');
+  assert.ok(externalRegistry['EXTERNAL_2'], '外部条目 EXTERNAL_2 应保留');
 });

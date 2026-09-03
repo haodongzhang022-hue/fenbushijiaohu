@@ -23,7 +23,7 @@ const { NetTransport } = require('./net');
  *   1. 共享 registry 作为节点地址簿（nodeId → {host, port}）；
  *   2. 每节点一个 NetTransport（独立真实回环监听）；
  *   3. addNode 自动与新节点建立全互联；
- *   4. removeNode 关闭其传输并从 mesh 移除（其余节点自动感知断开）；
+ *   4. removeNode 关闭其传输并同步通知其余节点断开（自动感知）；
  *   5. broadcast/sendTo 经真实 TCP 套接字端到端收发。
  */
 class NetMesh {
@@ -69,28 +69,45 @@ class NetMesh {
     if (handler) t.onData(handler);
 
     // 与已有节点全互联（新建方作为主动拨号方）
-    for (const existingId of this._transports.keys()) {
-      if (existingId === nodeId) continue;
-      // 新建节点主动连接已有节点
+    const existingIds = [...this._transports.keys()].filter((id) => id !== nodeId);
+    const failedPeers = [];
+    for (const existingId of existingIds) {
       try {
         await t.connect({ id: existingId }, this._registry);
       } catch (e) {
-        // 连接失败仅记录不阻塞 mesh 加入
-        this._registry[nodeId] = { host: t.host, port: t.port };
+        failedPeers.push(existingId);
       }
     }
-    // 确保双方握手登记完成
+    // 建连失败：回滚新节点并抛错（不残留不可见半连接 mesh）
+    if (failedPeers.length > 0) {
+      t.close();
+      this._transports.delete(nodeId);
+      delete this._registry[nodeId];
+      this._dataHandlers.delete(nodeId);
+      throw new Error(
+        `节点 ${nodeId} 无法与以下既有节点建连: ${failedPeers.join(', ')}`
+      );
+    }
+    // 确定性就绪信号：等待各节点 peer 数达到预期
     await this._settle();
     return { id: nodeId, port: t.port };
   }
 
   /**
-   * 移除一个节点（关闭传输，mesh 其余节点自动感知其不可达）
+   * 移除一个节点（关闭传输，通知其余节点断开并自动感知）
    * @param {string} nodeId
    */
   removeNode(nodeId) {
     const t = this._transports.get(nodeId);
     if (!t) return;
+    // 通知 mesh 内其它存活节点断开与被移除节点的连接
+    const removedId = nodeId;
+    for (const [otherId, otherT] of this._transports) {
+      if (otherId === removedId) continue;
+      if (typeof otherT.disconnect === 'function') {
+        otherT.disconnect(removedId);
+      }
+    }
     t.close();
     this._transports.delete(nodeId);
     delete this._registry[nodeId];
@@ -162,15 +179,21 @@ class NetMesh {
   }
 
   /**
-   * 关闭整个 mesh：释放所有连接与资源
+   * 关闭整个 mesh：释放所有连接与资源。
+   * 若 registry 为注入的外部对象，仅清理本 mesh 登记的条目，不清空外部对象。
    */
   close() {
     for (const t of this._transports.values()) {
       try { t.close(); } catch (e) { /* ignore */ }
     }
+    // 记录被本 mesh 登记的节点 id
+    const registeredIds = this._transports.size > 0 ? this._transports.keys() : [];
+    // 仅删除本 mesh 登记的条目
+    for (const id of registeredIds) {
+      delete this._registry[id];
+    }
     this._transports.clear();
     this._dataHandlers.clear();
-    this._registry = {};
   }
 
   /** 等待某 transport 完成监听 */
@@ -182,9 +205,19 @@ class NetMesh {
     throw new Error(`NetTransport ${t.nodeId} 监听超时`);
   }
 
-  /** 等待各方握手完成（网络编排稳定） */
+  /** 等待各方握手完成（确定性就绪信号，超时兜底） */
   async _settle() {
-    await new Promise((r) => setTimeout(r, 120));
+    const expected = this._transports.size - 1;
+    // 确定性就绪：每个节点 peer 数 == size-1，或超时兜底
+    for (let i = 0; i < 50; i++) {
+      const allReady = [...this._transports.values()].every((t) =>
+        t.peers.length >= expected
+      );
+      if (allReady) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    // 超时兜底（网络延迟场景）
+    await new Promise((r) => setTimeout(r, 50));
   }
 }
 

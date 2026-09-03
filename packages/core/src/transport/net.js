@@ -255,6 +255,21 @@ class NetTransport extends Transport {
   }
 
   /**
+   * 断开与指定 peer 的连接并清理相关状态
+   * @param {string} peerId 对端节点 id
+   */
+  disconnect(peerId) {
+    if (this._state === 'closed') return;
+    const socket = this._sockets.get(peerId);
+    if (socket) {
+      try { socket.destroy(); } catch { /* ignore */ }
+      this._sockets.delete(peerId);
+    }
+    this._buffers.delete(peerId);
+    this._channels.delete(peerId);
+  }
+
+  /**
    * 关闭真实 TCP 传输
    */
   close() {
