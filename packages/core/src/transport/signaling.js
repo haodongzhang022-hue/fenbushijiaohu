@@ -81,7 +81,6 @@ class SignalingServer {
     this.mode = opts.mode || 'memory';
     this.port = opts.port || 0;
     this._rooms = new Map();    // roomId -> Map<peerId, SignalingSession>
-    this._transports = new Map(); // peerId -> {type, address}（供跨房间查找）
   }
 
   /**
@@ -134,6 +133,10 @@ class SignalingServer {
    * @private
    */
   async _route(roomId, from, to, data) {
+    // 自发送防护：不能给自己发信令（与 case-13 断言一致）
+    if (from === to) {
+      return false;
+    }
     const room = this._rooms.get(roomId);
     if (!room) {
       throw new Error(`信令房间 ${roomId} 不存在`);
@@ -185,7 +188,6 @@ class SignalingServer {
    */
   close() {
     this._rooms.clear();
-    this._transports.clear();
   }
 
   /**

@@ -180,13 +180,13 @@ test('webrtc-signaling: 经信令建立后数据可传递', async () => {
   await tB.joinRoom('data-room', server);
   await tA.connect({ id: 'node-b' });
 
-  // 经信令发送数据
+  // 经信令发送数据（走真实信令 data 通路，不再用 deliver 掩盖）
   await tA.send('node-b', { type: 'text', payload: 'hello-via-signaling' });
 
-  // B 侧模拟收到
-  tB.deliver('node-a', { type: 'text', payload: 'hello-via-signaling' });
+  // 评审回归：B 经信令 data 通路真正收到（send → signaling._route → _handleSignalingMessage → _emitData → onData）
   assert.equal(receivedB.length, 1);
   assert.equal(receivedB[0].data.payload, 'hello-via-signaling');
+  assert.equal(receivedB[0].from, 'node-a');
 
   server.close();
   tA.close();
@@ -198,4 +198,72 @@ test('signaling: createSignaling 工厂创建 SignalingServer', () => {
   assert.ok(server instanceof SignalingServer);
   assert.equal(server.mode, 'memory');
   server.close();
+});
+
+// ---------- 6. 评审回归：信令 data 通路（libp2p）、自发送防护、超时清理 ----------
+test('libp2p-signaling: 经信令建立后数据经真实通路到达 onData', async () => {
+  const server = createSignaling('memory');
+  const tA = new Libp2pTransport('node-a', {
+    signaling: server,
+    listenAddr: '/ip4/127.0.0.1/tcp/8091/p2p/node-a',
+  });
+  const tB = new Libp2pTransport('node-b', {
+    signaling: server,
+    listenAddr: '/ip4/127.0.0.1/tcp/8092/p2p/node-b',
+  });
+
+  const receivedB = [];
+  tB.onData((data, from) => receivedB.push({ data, from }));
+
+  await tA.joinRoom('libp2p-data-room', server);
+  await tB.joinRoom('libp2p-data-room', server);
+  await tA.connect({ id: 'node-b' });
+
+  // 经信令 data 通路投递
+  await tA.send('node-b', { type: 'text', payload: 'p2p-via-signaling' });
+
+  // B 经真实信令 data 通路收到（不再用 deliver 掩盖）
+  assert.equal(receivedB.length, 1);
+  assert.equal(receivedB[0].data.payload, 'p2p-via-signaling');
+  assert.equal(receivedB[0].from, 'node-a');
+
+  server.close();
+  tA.close();
+  tB.close();
+});
+
+test('signaling: 不能给自己发信令（_route 自发送防护）', async () => {
+  const server = createSignaling('memory');
+  await server.join('self-room', 'node-a');
+  // 直接经 session.signal 发给自己应返回 false 且不产生消息
+  const sA = server._rooms.get('self-room').get('node-a');
+  let msgCount = 0;
+  sA.on('message', () => msgCount++);
+  const ok = await sA.signal('node-a', { type: 'offer' });
+  assert.equal(ok, false);
+  assert.equal(msgCount, 0);
+  server.close();
+});
+
+test('webrtc: answer 等待超时后清理 pendingAnswers 不泄漏', async () => {
+  const tA = new WebRTCTransport('node-timeout');
+  // 用极短超时触发 reject + 清理
+  await assert.rejects(
+    tA._waitForAnswer('ghost-peer', 20),
+    /answer 超时/
+  );
+  // 超时后 pending 条目必须被清理
+  assert.equal(tA._pendingAnswers.has('ghost-peer'), false);
+  tA.close();
+});
+
+test('libp2p: 拨号应答等待超时后清理 pendingDial 不泄漏', async () => {
+  const tA = new Libp2pTransport('node-timeout');
+  await assert.rejects(
+    tA._waitForDialAnswer('ghost-peer', 20),
+    /拨号应答超时/
+  );
+  // 超时后 pendingDial 条目必须被清理
+  assert.equal(tA._pendingDial.has('ghost-peer'), false);
+  tA.close();
 });

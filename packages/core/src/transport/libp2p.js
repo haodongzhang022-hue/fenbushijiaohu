@@ -119,6 +119,11 @@ class Libp2pTransport extends Transport {
   _waitForDialAnswer(peerId, timeoutMs) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        // 超时需清理 pendingDial 条目，避免资源泄漏
+        if (this._pendingDial.has(peerId)) {
+          clearTimeout(this._pendingDial.get(peerId).timeout);
+          this._pendingDial.delete(peerId);
+        }
         reject(new Error(`libp2p 等待 ${peerId} 的拨号应答超时`));
       }, timeoutMs);
       this._pendingDial.set(peerId, { resolve, reject, timeout });
@@ -132,7 +137,10 @@ class Libp2pTransport extends Transport {
   _handleSignalingMessage(msg) {
     const { from, payload } = msg;
     const data = payload || {};
-    if (data.type === 'dial') {
+    if (data.type === 'data') {
+      // 经信令的数据投递（评审回归：信令数据通路不再断裂）
+      this._emitData(data.payload, from);
+    } else if (data.type === 'dial') {
       // 对端请求拨号，回应答（含本机 multiaddr）
       const answer = {
         type: 'dial-answer',

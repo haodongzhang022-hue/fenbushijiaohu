@@ -28,6 +28,7 @@ function reconnectPolicy(history, config) {
       // 重连成功
       // 修复：必须重置 retries 为 0
       state = 'connected';
+      retries = 0;
     }
   }
   return { state, finalRetries: retries };

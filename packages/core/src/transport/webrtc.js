@@ -123,6 +123,11 @@ class WebRTCTransport extends Transport {
   _waitForAnswer(peerId, timeoutMs) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        // 超时需清理 pending 条目，避免资源泄漏
+        if (this._pendingAnswers.has(peerId)) {
+          clearTimeout(this._pendingAnswers.get(peerId).timeout);
+          this._pendingAnswers.delete(peerId);
+        }
         reject(new Error(`WebRTC 等待 ${peerId} 的 answer 超时`));
       }, timeoutMs);
       // 挂在 pendingAnswers 中，由 _handleSignalingMessage 触发
@@ -137,7 +142,10 @@ class WebRTCTransport extends Transport {
   _handleSignalingMessage(msg) {
     const { from, payload } = msg;
     const data = payload || {};
-    if (data.type === 'answer') {
+    if (data.type === 'data') {
+      // 经信令的数据投递（评审回归：信令数据通路不再断裂）
+      this._emitData(data.payload, from);
+    } else if (data.type === 'answer') {
       // 对端回 answer，解析 pending answer
       const pending = this._pendingAnswers.get(from);
       if (pending) {

@@ -17,12 +17,15 @@
  */
 function matchJoin(room, player) {
   const latencyBudget = room.latencyBudget || 50;
-  // 修复：必须检查房间容量 playerCount >= capacity
-  // bug 版本缺少容量检查，只检查延迟
+  // 容量校验：房间已满（playerCount >= capacity）则拒绝加入
+  const capacity = typeof room.capacity === 'number' ? room.capacity : Infinity;
+  if (room.playerCount >= capacity) {
+    return { accepted: false, reason: '房间已满' };
+  }
+  // 延迟校验
   if (player.latency > latencyBudget) {
     return { accepted: false, reason: '延迟超预算' };
   }
-  // bug：直接接受，不检查容量
   return { accepted: true, reason: null };
 }
 

@@ -29,6 +29,7 @@ function bruteForceGuard(attempts, config) {
       state = 'active';
       // 修复：成功验证后必须重置 failCount = 0
       // bug 版本不重置
+      failCount = 0;
     } else {
       failCount++;
       if (failCount >= maxAttempts) {
