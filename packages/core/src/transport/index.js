@@ -4,6 +4,7 @@
  *
  * 提供统一 Transport 接口契约，支持多种传输实现可插拔切换：
  *   - MemoryTransport   ：内存模拟（测试用，原有）
+ *   - NetTransport      ：真实 TCP 回环套接字（CI 可测的真实网络，新增）
  *   - WebRTCTransport   ：浏览器 P2P（DTLS 加密，STUN/TURN 穿透）
  *   - Libp2pTransport   ：Node/服务端 P2P（Noise 加密，yamux 多路）
  *   - SignalingServer   ：信令服务（SDP/ICE 交换，真实网络建连）
@@ -20,13 +21,14 @@
 
 const { Transport } = require('./transport');
 const { MemoryTransport } = require('./memory');
+const { NetTransport, encodeFrame } = require('./net');
 const { WebRTCTransport } = require('./webrtc');
 const { Libp2pTransport } = require('./libp2p');
 const { SignalingServer, SignalingSession, createSignaling } = require('./signaling');
 
 /**
  * 工厂：按类型创建传输实例
- * @param {'memory'|'webrtc'|'libp2p'} type
+ * @param {'memory'|'net'|'webrtc'|'libp2p'} type
  * @param {string} nodeId
  * @param {object} [opts]
  */
@@ -34,6 +36,8 @@ function createTransport(type, nodeId, opts = {}) {
   switch (type) {
     case 'memory':
       return new MemoryTransport(nodeId, opts);
+    case 'net':
+      return new NetTransport(nodeId, opts);
     case 'webrtc':
       return new WebRTCTransport(nodeId, opts);
     case 'libp2p':
@@ -46,6 +50,8 @@ function createTransport(type, nodeId, opts = {}) {
 module.exports = {
   Transport,
   MemoryTransport,
+  NetTransport,
+  encodeFrame,
   WebRTCTransport,
   Libp2pTransport,
   SignalingServer,
