@@ -36,6 +36,10 @@ class Identity {
    * @param {string} msg
    */
   sign(msg) {
+    // P2-02：非字符串入参类型防护，优雅抛出自定义错误（而非底层 Buffer TypeError）
+    if (typeof msg !== 'string') {
+      throw new TypeError(`sign() 入参必须为字符串，收到类型: ${msg === null ? 'null' : typeof msg}`);
+    }
     const data = Buffer.from(msg, 'utf8');
     return crypto.sign(null, data, this._keyPair.privateKey).toString('base64');
   }

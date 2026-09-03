@@ -15,12 +15,18 @@
  *   - lan    : 可广播、可接收（局域网内）、通常不需中继
  *   - offline: 仅本地，不可广播、可接收本机回环、走本地兜底
  */
+const VALID_MODES = ['online', 'lan', 'offline'];
+
 class Policy {
   /**
    * @param {'online'|'lan'|'offline'} [mode] 初始联网模式
    * @param {boolean} [natFailed] 本次会话 NAT 是否穿透失败
    */
   constructor(mode = 'online', natFailed = false) {
+    // P2-01：构造器与 setMode 校验行为对齐，非法模式直接抛错
+    if (!VALID_MODES.includes(mode)) {
+      throw new Error(`非法联网模式: ${mode}`);
+    }
     this.mode = mode;
     this.natFailed = natFailed;
   }
@@ -43,7 +49,7 @@ class Policy {
 
   /** 切换模式 */
   setMode(mode) {
-    if (!['online', 'lan', 'offline'].includes(mode)) {
+    if (!VALID_MODES.includes(mode)) {
       throw new Error(`非法联网模式: ${mode}`);
     }
     this.mode = mode;

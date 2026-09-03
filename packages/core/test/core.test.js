@@ -48,6 +48,16 @@ test('identity: 用他人公钥验签失败', () => {
   assert.equal(bob.verify(bob.publicKey, 'hello', sig), false);
 });
 
+test('identity: P2-02 sign 非字符串入参优雅抛自定义类型错误', () => {
+  const id = new Identity();
+  assert.throws(() => id.sign(123), /入参必须为字符串/);
+  assert.throws(() => id.sign(null), /入参必须为字符串/);
+  assert.throws(() => id.sign({ a: 1 }), /入参必须为字符串/);
+  assert.throws(() => id.sign(undefined), /入参必须为字符串/);
+  // 字符串入参正常
+  assert.doesNotThrow(() => id.sign('ok'));
+});
+
 // ---------- 1b. keystore（P1 身份凭据持久化） ----------
 test('keystore: 生成+解锁+签名闭环', async () => {
   const ks = new Keystore();
@@ -108,6 +118,16 @@ test('policy: 非法模式抛错', () => {
   assert.throws(() => p.setMode('unknown'), /非法联网模式/);
 });
 
+test('policy: P2-01 构造器与 setMode 校验对齐，非法模式抛错', () => {
+  assert.throws(() => new Policy('hacker-mode'), /非法联网模式/);
+  assert.throws(() => new Policy('unknown'), /非法联网模式/);
+  // 合法模式构造不抛错
+  assert.doesNotThrow(() => new Policy('online'));
+  assert.doesNotThrow(() => new Policy('lan'));
+  assert.doesNotThrow(() => new Policy('offline'));
+  assert.doesNotThrow(() => new Policy()); // 默认 online
+});
+
 // ---------- 3. session（消息条 + CRDT 收敛） ----------
 test('session: 发送消息生成合法消息且可被读回', () => {
   const s = new Session('pub-a', 'chan-1');
@@ -144,6 +164,89 @@ test('session: 非法消息类型被拒绝', () => {
   const s = new Session('pub-a', 'chan-1');
   assert.throws(() => s.send('x', 'hack'), /非法消息类型/);
   assert.equal(s.merge({ channelId: 'chan-1', type: 'hack', ts: 1 }), false);
+});
+
+test('session: P2-05 merge 缺必需字段的消息被拒绝', () => {
+  const s = new Session('pub-a', 'chan-1');
+  // 缺 id/ts 的畸形消息
+  assert.equal(s.merge({ channelId: 'chan-1', type: 'text', payload: 'x' }), false);
+  // 缺 sender
+  assert.equal(
+    s.merge({ channelId: 'chan-1', type: 'text', payload: 'x', ts: 1, id: 'abc' }),
+    false
+  );
+  // 缺 payload
+  assert.equal(
+    s.merge({ channelId: 'chan-1', type: 'text', sender: 'pub-b', ts: 1, id: 'abc' }),
+    false
+  );
+  // ts 非数字
+  assert.equal(
+    s.merge({ channelId: 'chan-1', type: 'text', payload: 'x', sender: 'pub-b', ts: '1', id: 'abc' }),
+    false
+  );
+  // 字段齐全的合法消息可合并
+  const good = s.send('合法消息', 'text');
+  // 再造一条字段齐全的远端合法消息并验证可合并（构造消息需带 channelId/type/payload/sender/ts/id）
+  assert.equal(
+    s.merge({ channelId: 'chan-1', type: 'text', payload: 'ok', sender: 'pub-b', ts: 99, id: 'xyz-ok' }),
+    true
+  );
+  // 空视图为空时不应增长畸形消息
+  assert.equal(s.messages.length, 2);
+});
+
+test('session: P2-03 签名模式 send 自动附带签名，merge 拒绝伪造 sender', () => {
+  const alice = new Identity();
+  const bob = new Identity();
+  // 签名模式会话（alice 身份）
+  const a = new Session(alice.publicKey, 'chan-s', { identity: alice });
+  const b = new Session(bob.publicKey, 'chan-s', { identity: bob });
+  assert.equal(a.signed, true);
+
+  // alice 签名发送，bob 可验签合并
+  const ma = a.send('secure-msg');
+  assert.ok(ma.sig, '发送的消息应附带签名');
+  assert.equal(a.verifySender(ma), true);       // 本地消息验签通过
+  assert.equal(b.merge(ma), true);              // bob 可合并合法签名消息
+
+  // 篡改 sender（伪造身份）：把 sender 改成 bob 的公钥但签名仍是 alice 的
+  const forged = { ...ma, sender: bob.publicKey };
+  assert.equal(b.merge(forged), false, '伪造 sender 应被拒绝');
+
+  // 篡改 payload：内容变了签名对不上
+  const tampered = { ...ma, payload: 'tampered' };
+  assert.equal(b.merge(tampered), false, '篡改内容应被拒绝');
+
+  // 去掉 sig 的未签名消息应被拒绝
+  const noSig = { ...ma };
+  delete noSig.sig;
+  assert.equal(b.merge(noSig), false, '未签名消息应被拒绝');
+});
+
+test('session: P2-03 签名模式两节点经签名收敛一致', () => {
+  const alice = new Identity();
+  const bob = new Identity();
+  const a = new Session(alice.publicKey, 'chan-z', { identity: alice });
+  const b = new Session(bob.publicKey, 'chan-z', { identity: bob });
+  const ma = a.send('from-alice');
+  const mb = b.send('from-bob');
+  assert.equal(a.merge(mb), true);   // 交叉验签合并
+  assert.equal(b.merge(ma), true);
+  assert.equal(a.messages.length, 2);
+  assert.equal(b.messages.length, 2);
+  const keyA = a.messages.map((m) => m.id).join(',');
+  const keyB = b.messages.map((m) => m.id).join(',');
+  assert.equal(keyA, keyB);
+});
+
+test('session: P2-03 非签名模式（M1 兼容）仍接受未签名消息', () => {
+  const a = new Session('pub-a', 'chan-legacy');
+  const b = new Session('pub-b', 'chan-legacy');
+  assert.equal(a.signed, false);
+  const ma = a.send('legacy');
+  assert.ok(!ma.sig, '非签名模式不附带签名');
+  assert.equal(b.merge(ma), true);   // 兼容历史未签名消息
 });
 
 // ---------- 4. transport（内存直连 + 真实适配器） ----------
