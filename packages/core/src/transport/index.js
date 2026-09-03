@@ -25,6 +25,7 @@ const { NetTransport, encodeFrame } = require('./net');
 const { WebRTCTransport } = require('./webrtc');
 const { Libp2pTransport } = require('./libp2p');
 const { SignalingServer, SignalingSession, createSignaling } = require('./signaling');
+const { NetMesh } = require('./mesh');
 
 /**
  * 工厂：按类型创建传输实例
@@ -57,5 +58,6 @@ module.exports = {
   SignalingServer,
   SignalingSession,
   createSignaling,
+  NetMesh,
   createTransport,
 };

@@ -4,10 +4,11 @@
 
 ## 现状
 - 🏗 阶段：M0.5 框架 v2 增量（**100%**）+ 代码基全部落地
-- 🚀 **6 包 133 项测试全绿 + bug-bench 16 用例 57 断言全绿**
+- 🚀 **6 包 152 项测试全绿 + bug-bench 16 用例 57 断言全绿**
 - ✅ M1 消息条 MVP / M2 联网策略 / M2a 中继网格 / M3 分布式计算 / M4 内容分发 / M4b 分层存储+云端+115 冷存
 - ✅ M5 游戏大厅（Lobby+Fed）/ M6 治理信誉（Reputation+Governance）/ 真实传输适配器（WebRTC+Libp2p）/ 身份 Keystore
 - ✅ **信令服务（SignalingServer）已落地**：房间模型 + SDP/ICE 交换 + multiaddr 路由
+- ✅ **NetMesh 多节点真实 TCP 回环 mesh 已落地**：3+ 节点经真实 socket 全互联演练
 - ✅ **G5 front-matter 统一**：全部架构文档已按规范添加 YAML 元数据
 - 🧪 bug-bench 评测台已扩充至 **16 用例（57 断言）**，覆盖信令路由/重连/暴力破解/容量约束等
 
@@ -42,7 +43,7 @@
 ## 代码基与评测台
 | 包 | 里程碑 | 测试 | 说明 |
 |----|--------|------|------|
-| `packages/core` | M1 + P0 + P1 | **29** | identity/keystore/policy/session/transport/signaling（WebRTC/libp2p） |
+| `packages/core` | M1 + P0 + P1 | **48** | identity/keystore/policy/session/transport/signaling/mesh（WebRTC/libp2p/NetTransport/NetMesh） |
 | `packages/net-policy` | M2 | 9 | 联网策略 + relay NAT 兜底 |
 | `packages/relay-mesh` | M2a | 14 | health/failover/mesh/multipath |
 | `packages/compute` | M3 + M6 | 40 | compute/aggregator/verify/reputation/governance |
@@ -50,7 +51,7 @@
 | `packages/app` | M5 | 12 | lobby/fed |
 | `bug-bench` | 评测台 | **57 (16 cases)** | 含信令路由/重连/暴力破解/容量约束 |
 
-> **合计 6 包 133 项测试全绿 + bug-bench 57 断言全绿**
+> **合计 6 包 152 项测试全绿 + bug-bench 57 断言全绿**
 
 ## 核心能力
 1. **点对点消息直连**（消息条 + 信令服务）

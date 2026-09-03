@@ -9,11 +9,14 @@ const { Session, MSG_TYPES } = require('./src/session');
 const {
   Transport,
   MemoryTransport,
+  NetTransport,
+  encodeFrame,
   WebRTCTransport,
   Libp2pTransport,
   SignalingServer,
   SignalingSession,
   createSignaling,
+  NetMesh,
   createTransport,
 } = require('./src/transport');
 
@@ -25,10 +28,13 @@ module.exports = {
   MSG_TYPES,
   Transport,
   MemoryTransport,
+  NetTransport,
+  encodeFrame,
   WebRTCTransport,
   Libp2pTransport,
   SignalingServer,
   SignalingSession,
   createSignaling,
+  NetMesh,
   createTransport,
 };
