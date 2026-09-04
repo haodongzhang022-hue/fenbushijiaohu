@@ -21,6 +21,10 @@ class Policy {
    * @param {boolean} [natFailed] 本次会话 NAT 是否穿透失败
    */
   constructor(mode = 'online', natFailed = false) {
+    // P2-01 修复：构造器与 setMode 行为一致，非法模式抛错
+    if (!['online', 'lan', 'offline'].includes(mode)) {
+      throw new Error(`非法联网模式: ${mode}`);
+    }
     this.mode = mode;
     this.natFailed = natFailed;
   }
