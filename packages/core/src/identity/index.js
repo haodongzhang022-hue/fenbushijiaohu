@@ -33,9 +33,15 @@ class Identity {
 
   /**
    * 对消息签名，返回 base64 签名
-   * @param {string} msg
+   * @param {string} msg 待签名消息（必须是字符串）
+   * @returns {string} base64 签名
+   * @throws {TypeError} 当 msg 不是字符串时抛出自定义类型错误
    */
   sign(msg) {
+    // P2-02 修复：类型防护，非字符串输入优雅抛出自定义错误
+    if (typeof msg !== 'string') {
+      throw new TypeError(`sign() 入参必须是字符串，收到 ${msg === null ? 'null' : typeof msg}`);
+    }
     const data = Buffer.from(msg, 'utf8');
     return crypto.sign(null, data, this._keyPair.privateKey).toString('base64');
   }

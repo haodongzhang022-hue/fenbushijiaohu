@@ -5,6 +5,10 @@
  * 基于 Transport 抽象基类，提供内存/回调实现的测试用传输。
  * 用于本地跑通"两节点直连收发消息"闭环，不依赖真实网络。
  * 真实适配器（WebRTC/libp2p）按同一接口契约接入。
+ *
+ * P2-04 加固：send() 前校验目标 peer 已建立连接，未 connect 的直接投递被拒绝。
+ * 明文透传仅限内存测试（无真实网络），真实适配器（WebRTC DTLS / libp2p Noise）
+ * 自带传输层加密，加密闭环由真实网络协议栈覆盖，本层不做重复加密（评估留痕）。
  */
 
 const { Transport } = require('./transport');
@@ -45,16 +49,35 @@ class MemoryTransport extends Transport {
    */
   bindPeer(peerTransport) {
     this._directPeers.set(peerTransport.nodeId, peerTransport);
+    // bindPeer 视同建立连接（登记 channel）
+    this._channels.set(peerTransport.nodeId, {
+      id: `mem-${this.nodeId}-${peerTransport.nodeId}`,
+      peer: peerTransport.nodeId,
+      state: 'open',
+    });
   }
 
   /**
    * 向对端发送一条消息（测试环境：直接投递到对端 listener）
+   *
+   * P2-04：send 前必须确认目标 peer 已建立连接（connect / bindPeer / peerRegistry），
+   * 否则拒绝投递，杜绝"未 connect 直接 send"的越权路径。
+   *
    * @param {object} msg
    * @param {MemoryTransport} [peerTransport] 对端传输实例（测试注入）
    */
   async send(msg, peerTransport) {
     this._assertOpen();
-    const peer = peerTransport || this._directPeers.get(this.peers[0]);
+    let peerId = peerTransport ? peerTransport.nodeId : this.peers[0];
+    // 从 peerRegistry 反查对端实例（若有）
+    if (!peerTransport && this._peerRegistry && peerId != null) {
+      peerTransport = this._peerRegistry[peerId];
+    }
+    // P2-04：校验目标 peer 已建立连接
+    if (peerId == null || !this._channels.has(peerId)) {
+      throw new Error(`未建立与 ${peerId || '(unknown)'} 的连接，拒绝发送`);
+    }
+    const peer = peerTransport || this._directPeers.get(peerId);
     if (peer) {
       peer._emitData({ ...msg, receivedAt: Date.now() }, this.nodeId);
     }

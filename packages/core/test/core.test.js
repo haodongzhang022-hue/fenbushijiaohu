@@ -226,3 +226,108 @@ test('transport: 关闭后无法连接', async () => {
   t.close();
   await assert.rejects(() => t.connect({ id: 'node-b' }), /已关闭/);
 });
+
+// ---------- P2 缺陷回归测试（Issue #28） ----------
+test('P2-01: 构造器校验非法模式，与 setMode 一致', () => {
+  assert.throws(() => new Policy('hacker-mode'), /非法联网模式/);
+  assert.throws(() => new Policy('illegal'), /非法联网模式/);
+  assert.doesNotThrow(() => new Policy());
+  assert.doesNotThrow(() => new Policy('online'));
+  assert.doesNotThrow(() => new Policy('lan'));
+  assert.doesNotThrow(() => new Policy('offline'));
+});
+
+test('P2-02: sign() 对非字符串入参优雅抛出自定义类型错误', () => {
+  const id = new Identity();
+  assert.throws(() => id.sign(123), TypeError);
+  assert.throws(() => id.sign(null), TypeError);
+  assert.throws(() => id.sign(undefined), TypeError);
+  assert.throws(() => id.sign({}), TypeError);
+  assert.throws(() => id.sign(['x']), TypeError);
+  assert.throws(() => id.sign(Buffer.from('x')), TypeError);
+  assert.doesNotThrow(() => id.sign('valid-string'));
+  // 错误信息友好：包含入参类型提示
+  assert.throws(() => id.sign(123), /sign\(\) 入参必须是字符串/);
+});
+
+test('P2-05: merge 拒绝缺字段的畸形消息', () => {
+  const s = new Session('pub-a', 'chan-1');
+  // 缺 channel 或类型非法
+  assert.equal(s.merge({ channelId: 'other', type: 'text', payload: 'x' }), false);
+  assert.equal(s.merge({ channelId: 'chan-1', type: 'hack', payload: 'x' }), false);
+  // 缺 id
+  assert.equal(s.merge({ sender: 'pub-b', channelId: 'chan-1', type: 'text', payload: 'x', ts: 1 }), false);
+  // 缺 sender
+  assert.equal(s.merge({ id: 'i', channelId: 'chan-1', type: 'text', payload: 'x', ts: 1 }), false);
+  // 缺 payload
+  assert.equal(s.merge({ id: 'i', sender: 'pub-b', channelId: 'chan-1', type: 'text', ts: 1 }), false);
+  // 缺 ts
+  assert.equal(s.merge({ id: 'i', sender: 'pub-b', channelId: 'chan-1', type: 'text', payload: 'x' }), false);
+  // 非对象 / 空值
+  assert.equal(s.merge(null), false);
+  assert.equal(s.merge(undefined), false);
+  assert.equal(s.merge('string'), false);
+  // 类型错误：id 非字符串、ts 非有限数
+  assert.equal(s.merge({ id: 1, sender: 'pub-b', channelId: 'chan-1', type: 'text', payload: 'x', ts: 1 }), false);
+  assert.equal(s.merge({ id: 'i', sender: 'pub-b', channelId: 'chan-1', type: 'text', payload: 'x', ts: NaN }), false);
+  // 合法消息仍被接受（回归护栏）
+  assert.equal(s.merge({ id: 'ok1', sender: 'pub-b', channelId: 'chan-1', type: 'text', payload: 'x', ts: 1 }), true);
+});
+
+test('P2-03: 接线验签后 merge 拒绝伪造/篡改 sender 消息', () => {
+  const alice = new Identity();
+  const bob = new Identity();
+  const chan = 'chan-sig';
+
+  // alice 侧带签名能力：send 为消息附加 sig
+  const sa = new Session(alice.publicKey, chan, {
+    sign: (c) => alice.sign(c),
+  });
+  const legit = sa.send('hello-from-alice');
+  assert.ok(legit.sig && legit.sig.length > 0, '合法消息应携带 sig');
+
+  // bob 侧启用验签能力（注入 identity 的 verify）
+  const sb = new Session(bob.publicKey, chan, {
+    verify: (pubKey, canonical, sig) => alice.verify(pubKey, canonical, sig),
+  });
+
+  // ① 带合法签名的 alice 消息被接受
+  assert.equal(sb.merge({ ...legit }), true);
+  assert.equal(sb.messages.length, 1);
+
+  // ② 伪造：声明 sender=alice 但无签名 → 拒绝
+  const forged = { id: 'forged', sender: alice.publicKey, channelId: chan, type: 'text', payload: 'fake', ts: 9 };
+  assert.equal(sb.merge(forged), false);
+  assert.equal(sb.messages.length, 1);
+
+  // ③ 篡改：改动 payload 使签名失配 → 拒绝
+  const tampered = { ...legit, payload: 'tampered', id: 'tampered-id' };
+  assert.equal(sb.merge(tampered), false);
+  assert.equal(sb.messages.length, 1);
+
+  // ③b 伪造本地身份：声明 sender=本地(bob) 但无签名 → 拒绝
+  const localForged = { id: 'lf', sender: bob.publicKey, channelId: chan, type: 'text', payload: 'imposter', ts: 10 };
+  assert.equal(sb.merge(localForged), false);
+  assert.equal(sb.messages.length, 1);
+
+  // ④ 未启用验签能力的 Session 保持向后兼容（纯收敛不受影响）
+  const sbPlain = new Session(bob.publicKey, chan);
+  assert.equal(sbPlain.merge({ ...legit }), true);
+  assert.equal(sbPlain.merge(forged), true); // 无验签能力时不强制，仅做字段完整性校验
+});
+
+test('P2-04: 未 connect 直接 send 被拒绝', async () => {
+  const ta = new MemoryTransport('node-a');
+  const tb = new MemoryTransport('node-b');
+  tb.listen(() => {});
+  // 未 connect 就 send → 拒绝
+  await assert.rejects(() => ta.send({ id: 'm', payload: 'x' }, tb), /未建立.*连接/);
+  // connect 后正常发送
+  await ta.connect({ id: 'node-b' });
+  const got = [];
+  tb.listen((m) => got.push(m));
+  const ok = await ta.send({ id: 'm2', payload: 'after-connect' }, tb);
+  assert.equal(ok, true);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].payload, 'after-connect');
+});
